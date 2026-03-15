@@ -134,6 +134,44 @@
 
     .btn-primary:hover { background: var(--primary-dark); }
 
+    .collection-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      padding: 1.5rem;
+    }
+
+    .collection-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem;
+      background: #f8fafc;
+    }
+
+    .collection-card h3 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .collection-count {
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .collection-card code {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--text-light);
+      margin-top: 0.4rem;
+    }
+
+    .hint-text {
+      color: var(--text-light);
+      font-size: 0.88rem;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
@@ -280,6 +318,14 @@
     </button>
   </div>
 
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Firestore Root Collections Blueprint</div>
+      <div class="hint-text">Static demo wired to the requested top-level collections</div>
+    </div>
+    <div class="collection-grid" id="collectionsOverview"></div>
+  </div>
+
   <!-- Transactions Table -->
   <div class="card">
     <div class="card-header">
@@ -295,7 +341,10 @@
             <th>Date</th>
             <th>Entity</th>
             <th>Type</th>
+            <th>Fund</th>
             <th>Description</th>
+            <th>Accounts</th>
+            <th>Reference</th>
             <th>Amount</th>
             <th>Balance Impact</th>
           </tr>
@@ -330,12 +379,7 @@
 
       <div class="form-group">
         <label>Entity</label>
-        <select id="modalEntity">
-          <option value="charity-faith">Charity & Faith Mission</option>
-          <option value="bop-children">Bophelong Children’s Home</option>
-          <option value="bop-oldage">Bophelong Old Age Home</option>
-          <option value="bop-admin">Bophelong Admin / Clinic</option>
-        </select>
+        <select id="modalEntity"></select>
       </div>
 
       <div class="form-group">
@@ -359,6 +403,28 @@
         </div>
       </div>
 
+      <div class="form-row">
+        <div class="form-group">
+          <label>Debit Account</label>
+          <select id="modalDebitAccount"></select>
+        </div>
+        <div class="form-group">
+          <label>Credit Account</label>
+          <select id="modalCreditAccount"></select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Fund</label>
+          <select id="modalFund"></select>
+        </div>
+        <div class="form-group">
+          <label>Reference</label>
+          <input type="text" id="modalReference" placeholder="ENV1234 / EFT20260315"/>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Description</label>
         <input type="text" id="modalDesc" placeholder="Sunday offering / Food purchase / etc."/>
@@ -366,13 +432,7 @@
 
       <div class="form-group" id="transferToRow" style="display:none;">
         <label>Transfer To</label>
-        <select id="modalTransferTo">
-          <option value="">— Select destination —</option>
-          <option value="charity-faith">Charity & Faith Mission</option>
-          <option value="bop-children">Bophelong Children’s Home</option>
-          <option value="bop-oldage">Bophelong Old Age Home</option>
-          <option value="bop-admin">Bophelong Admin / Clinic</option>
-        </select>
+        <select id="modalTransferTo"></select>
       </div>
 
       <div style="margin-top:1.5rem; text-align:right;">
@@ -385,42 +445,279 @@
 </div>
 
 <script>
-// Dummy data (replace with real Firestore / API later)
-const entities = {
-  "charity-faith": "Charity & Faith Mission",
-  "bop-children":  "Bophelong Children’s Home",
-  "bop-oldage":    "Bophelong Old Age Home",
-  "bop-admin":     "Bophelong Admin / Clinic"
+const db = {
+  entities: [
+    { id: "charity-faith", name: "Charity & Faith Mission", type: "church", currency: "ZAR", active: true, settings: { reportingMonthStart: 1 } },
+    { id: "bophelong-children", name: "Bophelong Children’s Home", type: "children-home", currency: "ZAR", active: true, settings: { programFocus: "orphan-care" } },
+    { id: "bophelong-oldage", name: "Bophelong Old Age Home", type: "old-age-home", currency: "ZAR", active: true, settings: { programFocus: "elder-care" } },
+    { id: "bophelong-admin", name: "Bophelong Admin / Clinic", type: "admin", currency: "ZAR", active: true, settings: { sharedServices: true } }
+  ],
+  chartOfAccounts: [
+    { id: "income_tithes-offerings", name: "Tithes & Offerings", category: "income" },
+    { id: "income_donations", name: "Donations", category: "income" },
+    { id: "income_grants", name: "Grant Income", category: "income" },
+    { id: "expense_food-nutrition", name: "Food & Nutrition", category: "expense" },
+    { id: "expense_salaries", name: "Salaries", category: "expense" },
+    { id: "expense_medical-supplies", name: "Medical Supplies", category: "expense" },
+    { id: "assets_cash", name: "Cash", category: "asset" },
+    { id: "assets_bank", name: "Bank", category: "asset" }
+  ],
+  funds: [
+    { id: "fund_general", name: "General Fund" },
+    { id: "fund_building", name: "Building Fund" },
+    { id: "fund_missions", name: "Missions Fund" },
+    { id: "fund_orphan-care", name: "Orphan Care Fund" },
+    { id: "fund_elder-care", name: "Elder Care Fund" }
+  ],
+  transactions: [
+    {
+      id: "tx_20260314_tithes",
+      entityId: "charity-faith",
+      date: "2026-03-14",
+      type: "income",
+      amount: 28450,
+      currency: "ZAR",
+      debitAccount: "assets_cash",
+      creditAccount: "income_tithes-offerings",
+      fundId: "fund_general",
+      description: "Sunday offering 9 March",
+      reference: "ENV1234",
+      createdBy: "demo-user",
+      auditTrail: [{ when: "2026-03-14T08:15:00Z", who: "demo-user", action: "created" }]
+    },
+    {
+      id: "tx_20260313_food",
+      entityId: "bophelong-children",
+      date: "2026-03-13",
+      type: "expense",
+      amount: 18760,
+      currency: "ZAR",
+      debitAccount: "expense_food-nutrition",
+      creditAccount: "assets_bank",
+      fundId: "fund_orphan-care",
+      description: "Food & Nutrition supplies",
+      reference: "INV2026-443",
+      createdBy: "demo-user",
+      auditTrail: [{ when: "2026-03-13T10:00:00Z", who: "demo-user", action: "created" }]
+    },
+    {
+      id: "tx_20260312_donation",
+      entityId: "bophelong-oldage",
+      date: "2026-03-12",
+      type: "donation",
+      amount: 50000,
+      currency: "ZAR",
+      debitAccount: "assets_bank",
+      creditAccount: "income_donations",
+      fundId: "fund_elder-care",
+      description: "Corporate sponsor contribution",
+      reference: "DON-7788",
+      createdBy: "demo-user",
+      auditTrail: [{ when: "2026-03-12T11:45:00Z", who: "demo-user", action: "created" }]
+    },
+    {
+      id: "tx_20260311_transfer",
+      entityId: "charity-faith",
+      date: "2026-03-11",
+      type: "transfer",
+      amount: 25000,
+      currency: "ZAR",
+      debitAccount: "assets_bank",
+      creditAccount: "assets_bank",
+      fundId: "fund_missions",
+      description: "Support children home outreach",
+      reference: "TRF-105",
+      createdBy: "demo-user",
+      interEntity: { fromEntity: "charity-faith", toEntity: "bophelong-children" },
+      auditTrail: [{ when: "2026-03-11T07:30:00Z", who: "demo-user", action: "created" }]
+    },
+    {
+      id: "tx_20260310_medical",
+      entityId: "bophelong-admin",
+      date: "2026-03-10",
+      type: "expense",
+      amount: 12400,
+      currency: "ZAR",
+      debitAccount: "expense_medical-supplies",
+      creditAccount: "assets_cash",
+      fundId: "fund_general",
+      description: "Medical supplies restock",
+      reference: "MED-210",
+      createdBy: "demo-user",
+      auditTrail: [{ when: "2026-03-10T09:20:00Z", who: "demo-user", action: "created" }]
+    }
+  ],
+  consolidationRuns: [
+    {
+      id: "run_2026-03-31",
+      period: "2026-03",
+      generatedAt: "2026-03-31T17:00:00Z",
+      totals: { income: 78450, expense: 31160, surplus: 47290 },
+      eliminations: [{ sourceTxId: "tx_20260311_transfer", pairedEntity: "bophelong-children" }]
+    }
+  ]
 };
 
-let transactions = [
-  { date:"2026-03-14", entity:"charity-faith", type:"income", desc:"Tithes & Offerings", amount:28450, impact:"+" },
-  { date:"2026-03-13", entity:"bop-children", type:"expense", desc:"Food & Nutrition", amount:18760, impact:"−" },
-  { date:"2026-03-12", entity:"bop-oldage", type:"donation", desc:"Corporate sponsor", amount:50000, impact:"+" },
-  { date:"2026-03-11", entity:"charity-faith", type:"transfer", desc:"Support children home", amount:25000, impact:"− → +" },
-  { date:"2026-03-10", entity:"bop-admin", type:"expense", desc:"Medical supplies", amount:12400, impact:"−" },
-];
+const entityMap = Object.fromEntries(db.entities.map(entity => [entity.id, entity]));
+const accountMap = Object.fromEntries(db.chartOfAccounts.map(account => [account.id, account]));
+const fundMap = Object.fromEntries(db.funds.map(fund => [fund.id, fund]));
+
+function createOption(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+function populateEntityOptions() {
+  const entityFilter = document.getElementById("entityFilter");
+  const modalEntity = document.getElementById("modalEntity");
+  const transferTo = document.getElementById("modalTransferTo");
+
+  entityFilter.innerHTML = "";
+  modalEntity.innerHTML = "";
+  transferTo.innerHTML = "";
+
+  entityFilter.appendChild(createOption("all", "All Entities"));
+  transferTo.appendChild(createOption("", "— Select destination —"));
+
+  db.entities
+    .filter(entity => entity.active)
+    .forEach(entity => {
+      entityFilter.appendChild(createOption(entity.id, entity.name));
+      modalEntity.appendChild(createOption(entity.id, entity.name));
+      transferTo.appendChild(createOption(entity.id, entity.name));
+    });
+}
+
+function populateAccountOptions() {
+  const debitSelect = document.getElementById("modalDebitAccount");
+  const creditSelect = document.getElementById("modalCreditAccount");
+
+  debitSelect.innerHTML = "";
+  creditSelect.innerHTML = "";
+
+  db.chartOfAccounts.forEach(account => {
+    const label = `${account.name} (${account.id})`;
+    debitSelect.appendChild(createOption(account.id, label));
+    creditSelect.appendChild(createOption(account.id, label));
+  });
+
+  debitSelect.value = "assets_cash";
+  creditSelect.value = "income_tithes-offerings";
+}
+
+function populateFundOptions() {
+  const fundSelect = document.getElementById("modalFund");
+  fundSelect.innerHTML = "";
+  fundSelect.appendChild(createOption("", "Unrestricted / none"));
+
+  db.funds.forEach(fund => {
+    fundSelect.appendChild(createOption(fund.id, fund.name));
+  });
+
+  fundSelect.value = "fund_general";
+}
+
+function formatCurrency(amount) {
+  return `R ${amount.toLocaleString()}`;
+}
+
+function getBalanceImpact(transaction) {
+  if (transaction.type === "expense") {
+    return { label: "−", color: "var(--danger)" };
+  }
+
+  if (transaction.type === "transfer") {
+    const destination = entityMap[transaction.interEntity?.toEntity]?.name || "destination";
+    return { label: `− → ${destination}`, color: "var(--warning)" };
+  }
+
+  return { label: "+", color: "var(--success)" };
+}
+
+function renderCollectionsOverview() {
+  const overview = document.getElementById("collectionsOverview");
+  overview.innerHTML = "";
+
+  const sampleTransactions = db.transactions.slice(0, 2).map(transaction => transaction.id).join(" • ");
+  const rootCollections = [
+    { name: "entities", count: db.entities.length, sample: db.entities.map(entity => `entity_${entity.id}`).join(" • ") },
+    { name: "chart_of_accounts", count: db.chartOfAccounts.length, sample: db.chartOfAccounts.slice(0, 3).map(account => account.id).join(" • ") },
+    { name: "funds", count: db.funds.length, sample: db.funds.map(fund => fund.id).join(" • ") },
+    { name: "transactions", count: db.transactions.length, sample: sampleTransactions },
+    { name: "consolidation_runs", count: db.consolidationRuns.length, sample: db.consolidationRuns.map(run => run.id).join(" • ") }
+  ];
+
+  rootCollections.forEach(collection => {
+    const card = document.createElement("div");
+    card.className = "collection-card";
+
+    const title = document.createElement("h3");
+    title.textContent = collection.name;
+
+    const count = document.createElement("div");
+    count.className = "collection-count";
+    count.textContent = collection.count;
+
+    const description = document.createElement("div");
+    description.className = "hint-text";
+    description.textContent = "Root collection ready for entity-led finance reporting.";
+
+    const sample = document.createElement("code");
+    sample.textContent = collection.sample;
+
+    card.append(title, count, description, sample);
+    overview.appendChild(card);
+  });
+}
 
 function renderTransactions(filter = "all") {
   const tbody = document.querySelector("#transactionsTable tbody");
   tbody.innerHTML = "";
 
-  const filtered = filter === "all" 
-    ? transactions 
-    : transactions.filter(t => t.entity === filter);
+  const filtered = filter === "all"
+    ? db.transactions
+    : db.transactions.filter(transaction => transaction.entityId === filter);
 
-  filtered.forEach(t => {
+  filtered.forEach(transaction => {
     const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${t.date}</td>
-      <td>${entities[t.entity]}</td>
-      <td><span class="type-badge badge-${t.type}">${t.type}</span></td>
-      <td>${t.desc}</td>
-      <td style="font-weight:600;">R ${t.amount.toLocaleString()}</td>
-      <td style="color:${t.impact.startsWith('+') || t.type==='donation' ? 'var(--success)' : 'var(--danger)'}">
-        ${t.impact}
-      </td>
-    `;
+    const impact = getBalanceImpact(transaction);
+    const cells = [
+      transaction.date,
+      entityMap[transaction.entityId]?.name || transaction.entityId,
+      null,
+      fundMap[transaction.fundId]?.name || "Unrestricted",
+      transaction.description,
+      `${accountMap[transaction.debitAccount]?.name || transaction.debitAccount} → ${accountMap[transaction.creditAccount]?.name || transaction.creditAccount}`,
+      transaction.reference || "—",
+      formatCurrency(transaction.amount),
+      impact.label
+    ];
+
+    cells.forEach((value, index) => {
+      const cell = document.createElement("td");
+
+      if (index === 2) {
+        const badge = document.createElement("span");
+        badge.className = `type-badge badge-${transaction.type}`;
+        badge.textContent = transaction.type;
+        cell.appendChild(badge);
+      } else {
+        cell.textContent = value;
+      }
+
+      if (index === 7) {
+        cell.style.fontWeight = "600";
+      }
+
+      if (index === 8) {
+        cell.style.color = impact.color;
+      }
+
+      row.appendChild(cell);
+    });
+
     tbody.appendChild(row);
   });
 }
@@ -437,75 +734,128 @@ function closeModal() {
 function toggleTransferFields() {
   const type = document.getElementById("modalType").value;
   document.getElementById("transferToRow").style.display = type === "transfer" ? "block" : "none";
+
+  if (type === "expense") {
+    document.getElementById("modalDebitAccount").value = "expense_food-nutrition";
+    document.getElementById("modalCreditAccount").value = "assets_bank";
+  } else if (type === "transfer") {
+    document.getElementById("modalDebitAccount").value = "assets_bank";
+    document.getElementById("modalCreditAccount").value = "assets_bank";
+  } else {
+    document.getElementById("modalDebitAccount").value = "assets_cash";
+    document.getElementById("modalCreditAccount").value = type === "donation" ? "income_donations" : "income_tithes-offerings";
+  }
 }
 
 function addTransaction() {
-  const entity   = document.getElementById("modalEntity").value;
-  const type     = document.getElementById("modalType").value;
-  const date     = document.getElementById("modalDate").value;
-  const amount   = Number(document.getElementById("modalAmount").value);
-  const desc     = document.getElementById("modalDesc").value;
+  const entityId = document.getElementById("modalEntity").value;
+  const type = document.getElementById("modalType").value;
+  const date = document.getElementById("modalDate").value;
+  const amount = Number(document.getElementById("modalAmount").value);
+  const description = document.getElementById("modalDesc").value.trim();
+  const reference = document.getElementById("modalReference").value.trim();
+  const fundId = document.getElementById("modalFund").value || null;
+  const debitAccount = document.getElementById("modalDebitAccount").value;
+  const creditAccount = document.getElementById("modalCreditAccount").value;
   const transferTo = type === "transfer" ? document.getElementById("modalTransferTo").value : null;
 
-  if (!amount || !desc) {
-    alert("Please fill amount and description");
+  if (!amount || !description || !debitAccount || !creditAccount) {
+    alert("Please fill amount, description, and account mapping");
     return;
   }
 
-  const impact = type === "expense" ? "−" : (type === "transfer" ? "− → +" : "+");
+  if (type === "transfer" && (!transferTo || transferTo === entityId)) {
+    alert("Select a different destination entity for inter-entity transfers");
+    return;
+  }
 
-  transactions.unshift({
-    date, entity, type, desc, amount, impact
+  db.transactions.unshift({
+    id: `tx_${date.replaceAll("-", "")}_${Date.now()}`,
+    entityId,
+    date,
+    type,
+    amount,
+    currency: "ZAR",
+    debitAccount,
+    creditAccount,
+    fundId,
+    description,
+    reference,
+    createdBy: "demo-user",
+    interEntity: transferTo ? { fromEntity: entityId, toEntity: transferTo } : null,
+    auditTrail: [{ when: new Date().toISOString(), who: "demo-user", action: "created" }]
   });
 
   renderTransactions(document.getElementById("entityFilter").value);
+  updateKPIs();
+  renderCollectionsOverview();
   closeModal();
 
   // Reset form
   document.getElementById("modalAmount").value = "";
   document.getElementById("modalDesc").value = "";
+  document.getElementById("modalReference").value = "";
   document.getElementById("modalTransferTo").value = "";
+  document.getElementById("modalFund").value = "fund_general";
+  document.getElementById("modalType").value = "income";
+  toggleTransferFields();
 }
 
 function updateKPIs() {
-  const income = transactions
-    .filter(t => ["income","donation"].includes(t.type))
-    .reduce((sum, t) => sum + t.amount, 0);
+  const income = db.transactions
+    .filter(transaction => ["income", "donation"].includes(transaction.type))
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
 
-  const expense = transactions
-    .filter(t => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0);
+  const expense = db.transactions
+    .filter(transaction => transaction.type === "expense")
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
 
-  document.getElementById("totalIncome").textContent = `R ${income.toLocaleString()}`;
-  document.getElementById("totalExpense").textContent = `R ${expense.toLocaleString()}`;
-  document.getElementById("netSurplus").textContent = `R ${(income - expense).toLocaleString()}`;
-  document.getElementById("totalDonations").textContent = `R ${transactions.filter(t=>t.type==="donation").reduce((s,t)=>s+t.amount,0).toLocaleString()}`;
+  document.getElementById("totalIncome").textContent = formatCurrency(income);
+  document.getElementById("totalExpense").textContent = formatCurrency(expense);
+  document.getElementById("netSurplus").textContent = formatCurrency(income - expense);
+  document.getElementById("totalDonations").textContent = formatCurrency(
+    db.transactions
+      .filter(transaction => transaction.type === "donation")
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+  );
 }
 
-// Chart
-const ctx = document.getElementById('financeChart').getContext('2d');
-new Chart(ctx, {
-  type: 'bar',
-  data: {
-    labels: ['Jan','Feb','Mar'],
-    datasets: [
-      { label: 'Income', data: [420000, 510000, 318670], backgroundColor: 'rgba(52,199,89,0.65)' },
-      { label: 'Expenses', data: [310000, 365000, 217410], backgroundColor: 'rgba(255,59,48,0.55)' }
-    ]
-  },
-  options: {
-    responsive: true,
-    scales: { y: { beginAtZero: true } }
+function renderChart() {
+  if (!window.Chart) {
+    const chartContainer = document.getElementById("financeChart").parentElement;
+    chartContainer.innerHTML = '<div class="hint-text">Chart preview unavailable in this environment, but the collections-backed transaction data is loaded below.</div>';
+    return;
   }
-});
+
+  const ctx = document.getElementById("financeChart").getContext("2d");
+  new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: ["Jan", "Feb", "Mar"],
+      datasets: [
+        { label: "Income", data: [420000, 510000, 318670], backgroundColor: "rgba(52,199,89,0.65)" },
+        { label: "Expenses", data: [310000, 365000, 217410], backgroundColor: "rgba(255,59,48,0.55)" }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
 
 // Event listeners
 document.getElementById("entityFilter").addEventListener("change", e => {
   renderTransactions(e.target.value);
 });
 
+populateEntityOptions();
+populateAccountOptions();
+populateFundOptions();
+renderCollectionsOverview();
 renderTransactions();
 updateKPIs();
+renderChart();
 </script>
 </body>
 </html>
