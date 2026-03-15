@@ -447,10 +447,10 @@
 <script>
 const db = {
   entities: [
-    { id: "charity-faith", name: "Charity & Faith Mission", type: "church", currency: "ZAR", active: true, settings: { reportingMonthStart: 1 } },
-    { id: "bophelong-children", name: "Bophelong Children’s Home", type: "children-home", currency: "ZAR", active: true, settings: { programFocus: "orphan-care" } },
-    { id: "bophelong-oldage", name: "Bophelong Old Age Home", type: "old-age-home", currency: "ZAR", active: true, settings: { programFocus: "elder-care" } },
-    { id: "bophelong-admin", name: "Bophelong Admin / Clinic", type: "admin", currency: "ZAR", active: true, settings: { sharedServices: true } }
+    { docId: "entity_charity-faith", id: "charity-faith", name: "Charity & Faith Mission", type: "church", currency: "ZAR", active: true, settings: { reportingMonthStart: 1 } },
+    { docId: "entity_bophelong-children", id: "bophelong-children", name: "Bophelong Children’s Home", type: "children-home", currency: "ZAR", active: true, settings: { programFocus: "orphan-care" } },
+    { docId: "entity_bophelong-oldage", id: "bophelong-oldage", name: "Bophelong Old Age Home", type: "old-age-home", currency: "ZAR", active: true, settings: { programFocus: "elder-care" } },
+    { docId: "entity_bophelong-admin", id: "bophelong-admin", name: "Bophelong Admin / Clinic", type: "admin", currency: "ZAR", active: true, settings: { sharedServices: true } }
   ],
   chartOfAccounts: [
     { id: "income_tithes-offerings", name: "Tithes & Offerings", category: "income" },
@@ -480,7 +480,7 @@ const db = {
       debitAccount: "assets_cash",
       creditAccount: "income_tithes-offerings",
       fundId: "fund_general",
-      description: "Sunday offering 9 March",
+      description: "Sunday offering deposit for 9 March service",
       reference: "ENV1234",
       createdBy: "demo-user",
       auditTrail: [{ when: "2026-03-14T08:15:00Z", who: "demo-user", action: "created" }]
@@ -569,6 +569,21 @@ function createOption(value, label) {
   return option;
 }
 
+function createTransactionId(date) {
+  if (typeof window.crypto?.randomUUID === "function") {
+    return `tx_${date.replaceAll("-", "")}_${window.crypto.randomUUID()}`;
+  }
+
+  if (typeof window.crypto?.getRandomValues === "function") {
+    const values = new Uint32Array(2);
+    window.crypto.getRandomValues(values);
+    const randomSuffix = Array.from(values, value => value.toString(16).padStart(8, "0")).join("");
+    return `tx_${date.replaceAll("-", "")}_${randomSuffix}`;
+  }
+
+  throw new Error("Secure transaction ID generation is unavailable in this browser.");
+}
+
 function populateEntityOptions() {
   const entityFilter = document.getElementById("entityFilter");
   const modalEntity = document.getElementById("modalEntity");
@@ -629,7 +644,8 @@ function getBalanceImpact(transaction) {
   }
 
   if (transaction.type === "transfer") {
-    const destination = entityMap[transaction.interEntity?.toEntity]?.name || "destination";
+    const destinationId = transaction.interEntity?.toEntity;
+    const destination = entityMap[destinationId]?.name || (destinationId ? `${destinationId} (missing)` : "Unknown destination");
     return { label: `− → ${destination}`, color: "var(--warning)" };
   }
 
@@ -640,13 +656,13 @@ function renderCollectionsOverview() {
   const overview = document.getElementById("collectionsOverview");
   overview.innerHTML = "";
 
-  const sampleTransactions = db.transactions.slice(0, 2).map(transaction => transaction.id).join(" • ");
+  const sampleLimit = 3;
   const rootCollections = [
-    { name: "entities", count: db.entities.length, sample: db.entities.map(entity => `entity_${entity.id}`).join(" • ") },
-    { name: "chart_of_accounts", count: db.chartOfAccounts.length, sample: db.chartOfAccounts.slice(0, 3).map(account => account.id).join(" • ") },
-    { name: "funds", count: db.funds.length, sample: db.funds.map(fund => fund.id).join(" • ") },
-    { name: "transactions", count: db.transactions.length, sample: sampleTransactions },
-    { name: "consolidation_runs", count: db.consolidationRuns.length, sample: db.consolidationRuns.map(run => run.id).join(" • ") }
+    { name: "entities", count: db.entities.length, description: "Organization entities and entity-level settings.", sample: db.entities.slice(0, sampleLimit).map(entity => entity.docId).join(" • ") },
+    { name: "chart_of_accounts", count: db.chartOfAccounts.length, description: "Shared double-entry account definitions.", sample: db.chartOfAccounts.slice(0, sampleLimit).map(account => account.id).join(" • ") },
+    { name: "funds", count: db.funds.length, description: "Restricted and unrestricted nonprofit funds.", sample: db.funds.slice(0, sampleLimit).map(fund => fund.id).join(" • ") },
+    { name: "transactions", count: db.transactions.length, description: "Central fact records for finance activity.", sample: db.transactions.slice(0, sampleLimit).map(transaction => transaction.id).join(" • ") },
+    { name: "consolidation_runs", count: db.consolidationRuns.length, description: "Period-end snapshots and eliminations.", sample: db.consolidationRuns.slice(0, sampleLimit).map(run => run.id).join(" • ") }
   ];
 
   rootCollections.forEach(collection => {
@@ -662,7 +678,7 @@ function renderCollectionsOverview() {
 
     const description = document.createElement("div");
     description.className = "hint-text";
-    description.textContent = "Root collection ready for entity-led finance reporting.";
+    description.textContent = collection.description;
 
     const sample = document.createElement("code");
     sample.textContent = collection.sample;
@@ -764,13 +780,26 @@ function addTransaction() {
     return;
   }
 
-  if (type === "transfer" && (!transferTo || transferTo === entityId)) {
-    alert("Select a different destination entity for inter-entity transfers");
+  if (type === "transfer" && !transferTo) {
+    alert("Please select a destination entity");
+    return;
+  }
+
+  if (type === "transfer" && transferTo === entityId) {
+    alert("Source and destination entities must be different");
+    return;
+  }
+
+  let transactionId;
+  try {
+    transactionId = createTransactionId(date);
+  } catch (error) {
+    alert(error.message);
     return;
   }
 
   db.transactions.unshift({
-    id: `tx_${date.replaceAll("-", "")}_${Date.now()}`,
+    id: transactionId,
     entityId,
     date,
     type,
@@ -823,7 +852,10 @@ function updateKPIs() {
 function renderChart() {
   if (!window.Chart) {
     const chartContainer = document.getElementById("financeChart").parentElement;
-    chartContainer.innerHTML = '<div class="hint-text">Chart preview unavailable in this environment, but the collections-backed transaction data is loaded below.</div>';
+    const fallback = document.createElement("div");
+    fallback.className = "hint-text";
+    fallback.textContent = "Chart preview unavailable in this environment, but the collections-backed transaction data is loaded below.";
+    chartContainer.replaceChildren(fallback);
     return;
   }
 
