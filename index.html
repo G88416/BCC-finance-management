@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Multi-Entity Finance Dashboard • 2026</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
   <style>
     :root {
@@ -49,9 +52,19 @@
       padding: 0.6rem 1rem;
       border-radius: 8px;
       font-size: 0.95rem;
+      min-width: 150px;
     }
 
     .entity-select option { color: #000; background: white; }
+
+    .top-controls,
+    .inline-actions,
+    .pager {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
 
     .container {
       max-width: 1400px;
@@ -93,10 +106,12 @@
     .stat-trend {
       font-size: 0.85rem;
       margin-top: 0.5rem;
+      min-height: 1.25rem;
     }
 
     .positive { color: var(--success); }
     .negative { color: var(--danger); }
+    .warning-text { color: var(--warning); }
 
     .card {
       background: var(--card);
@@ -107,13 +122,21 @@
       overflow: hidden;
     }
 
-    .card-header {
+    .card-header,
+    .card-footer {
       padding: 1rem 1.5rem;
       border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
       background: #f8fafc;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .card-footer {
+      border-bottom: none;
+      border-top: 1px solid var(--border);
     }
 
     .card-title { font-size: 1.15rem; font-weight: 600; }
@@ -125,6 +148,14 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
+      background: #e2e8f0;
+      color: var(--text);
+    }
+
+    .btn:hover:not(:disabled) { opacity: 0.92; }
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     .btn-primary {
@@ -132,14 +163,26 @@
       color: white;
     }
 
-    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
 
-    .collection-grid {
+    .btn-outline {
+      background: white;
+      border: 1px solid var(--border);
+    }
+
+    .collection-grid,
+    .filters-grid,
+    .config-grid,
+    .auth-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 1rem;
       padding: 1.5rem;
     }
+
+    .collection-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .filters-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .config-grid,
+    .auth-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 
     .collection-card {
       border: 1px solid var(--border);
@@ -165,12 +208,58 @@
       font-size: 0.82rem;
       color: var(--text-light);
       margin-top: 0.4rem;
+      word-break: break-word;
     }
 
     .hint-text {
       color: var(--text-light);
       font-size: 0.88rem;
     }
+
+    .notice {
+      margin: 1rem 1.5rem 0;
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid #dbeafe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.9rem;
+    }
+
+    .notice.warning {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #c2410c;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    .status-pill.editor {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-pill.viewer {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .config-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+
+    .config-panel.open { display: block; }
 
     table {
       width: 100%;
@@ -182,6 +271,7 @@
       padding: 1rem 1.25rem;
       text-align: left;
       border-bottom: 1px solid var(--border);
+      vertical-align: top;
     }
 
     th {
@@ -191,21 +281,38 @@
       text-transform: uppercase;
       font-size: 0.82rem;
       letter-spacing: 0.5px;
+      white-space: nowrap;
     }
 
     tr:hover { background: #f8fafc; }
 
-    .type-badge {
+    .type-badge,
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
       padding: 0.35rem 0.8rem;
       border-radius: 999px;
       font-size: 0.82rem;
       font-weight: 600;
+      margin-right: 0.35rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .tag-badge {
+      background: #eef2ff;
+      color: #4338ca;
     }
 
     .badge-income  { background: #e6f4ea; color: #2e7d32; }
     .badge-expense { background: #ffebee; color: #c62828; }
     .badge-donation{ background: #e3f2fd; color: #1565c0; }
     .badge-transfer{ background: #f3e5f5; color: #6a1b9a; }
+
+    .table-empty {
+      text-align: center;
+      color: var(--text-light);
+      padding: 2rem 1rem;
+    }
 
     .modal-overlay {
       position: fixed;
@@ -222,7 +329,7 @@
       background: white;
       border-radius: 12px;
       width: 100%;
-      max-width: 520px;
+      max-width: 560px;
       max-height: 92vh;
       overflow-y: auto;
       box-shadow: 0 20px 60px rgba(0,0,0,0.25);
@@ -237,12 +344,9 @@
     }
 
     .modal-title { font-size: 1.25rem; font-weight: 600; }
-
     .modal-body { padding: 1.5rem; }
 
-    .form-group {
-      margin-bottom: 1.25rem;
-    }
+    .form-group { margin-bottom: 1.25rem; }
 
     label {
       display: block;
@@ -257,6 +361,8 @@
       border: 1px solid #d1d5db;
       border-radius: 6px;
       font-size: 0.95rem;
+      background: white;
+      color: var(--text);
     }
 
     .form-row {
@@ -265,9 +371,16 @@
       gap: 1.25rem;
     }
 
-    @media (max-width: 640px) {
+    .hidden { display: none !important; }
+
+    @media (max-width: 840px) {
       .form-row { grid-template-columns: 1fr; }
       .stats-grid { grid-template-columns: 1fr; }
+      .card-header,
+      .card-footer,
+      .top-controls,
+      .pager { align-items: flex-start; }
+      th, td { padding: 0.85rem; }
     }
   </style>
 </head>
@@ -276,62 +389,174 @@
 <header>
   <div>
     <h1>Multi-Entity Finance Dashboard</h1>
-    <p style="opacity:0.9; font-size:0.9rem;">Consolidated view • March 2026</p>
+    <p id="periodLabel" style="opacity:0.9; font-size:0.9rem;">Consolidated view • March 2026</p>
   </div>
-  <select class="entity-select" id="entityFilter">
-    <option value="all">All Entities</option>
-    <option value="charity-faith">Charity & Faith Mission</option>
-    <option value="bop-children">Bophelong Children’s Home</option>
-    <option value="bop-oldage">Bophelong Old Age Home</option>
-    <option value="bop-admin">Bophelong Admin / Clinic</option>
-  </select>
+  <div class="top-controls">
+    <select class="entity-select" id="periodMonth"></select>
+    <select class="entity-select" id="periodYear"></select>
+    <select class="entity-select" id="entityFilter"></select>
+  </div>
 </header>
 
 <div class="container">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Firebase Connection &amp; Access</div>
+        <div class="hint-text">Uses Firebase Auth plus the <code>transactions</code> collection when configured.</div>
+      </div>
+      <div class="inline-actions">
+        <span id="authStatus" class="status-pill">Local demo mode</span>
+        <button class="btn btn-outline" onclick="toggleConfigPanel()"><i class="fas fa-sliders-h"></i> Firebase Config</button>
+      </div>
+    </div>
 
-  <!-- Quick Stats -->
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-label">Total Income (YTD)</div>
-      <div class="stat-value" id="totalIncome">R 1,248,670</div>
-      <div class="stat-trend positive"><i class="fas fa-arrow-up"></i> 18% vs last year</div>
+    <div id="connectionNotice" class="notice">Configure Firebase to enable live Auth and Firestore sync. Until then, demo data is stored in localStorage.</div>
+
+    <div class="auth-grid">
+      <div>
+        <form onsubmit="event.preventDefault(); signIn();">
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="authEmail" placeholder="finance@example.org" autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" />
+          </div>
+          <div class="inline-actions">
+            <button class="btn btn-primary" id="signInBtn" type="submit">Sign In</button>
+            <button class="btn btn-outline" id="signUpBtn" type="button" onclick="signUp()">Create Account</button>
+            <button class="btn btn-outline hidden" id="signOutBtn" type="button" onclick="signOut()">Sign Out</button>
+          </div>
+        </form>
+      </div>
+      <div>
+        <div class="form-group">
+          <label>Signed-In User</label>
+          <input type="text" id="currentUserDisplay" value="Not signed in" readonly />
+        </div>
+        <div class="form-group">
+          <label>Access Summary</label>
+          <textarea id="accessSummary" rows="5" readonly>Local demo mode is active. Editors can create transactions locally. Add Firebase config to use real authentication, Firestore sync, and user-based roles.</textarea>
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Total Expenses (YTD)</div>
-      <div class="stat-value" id="totalExpense">R 892,410</div>
-      <div class="stat-trend negative"><i class="fas fa-arrow-down"></i> 4% better control</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Net Surplus</div>
-      <div class="stat-value" id="netSurplus" style="color:var(--success)">R 356,260</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Donations Received</div>
-      <div class="stat-value" id="totalDonations">R 487,920</div>
+
+    <div class="config-panel" id="configPanel">
+      <div class="config-grid">
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="text" id="cfgApiKey" placeholder="AIza..." />
+        </div>
+        <div class="form-group">
+          <label>Auth Domain</label>
+          <input type="text" id="cfgAuthDomain" placeholder="project.firebaseapp.com" />
+        </div>
+        <div class="form-group">
+          <label>Project ID</label>
+          <input type="text" id="cfgProjectId" placeholder="project-id" />
+        </div>
+        <div class="form-group">
+          <label>Storage Bucket</label>
+          <input type="text" id="cfgStorageBucket" placeholder="project.appspot.com" />
+        </div>
+        <div class="form-group">
+          <label>Messaging Sender ID</label>
+          <input type="text" id="cfgMessagingSenderId" placeholder="1234567890" />
+        </div>
+        <div class="form-group">
+          <label>App ID</label>
+          <input type="text" id="cfgAppId" placeholder="1:1234567890:web:abcdef" />
+        </div>
+      </div>
+      <div style="padding:0 1.5rem 1.5rem;">
+        <div class="form-group">
+          <label>Editor Emails (optional fallback)</label>
+          <textarea id="cfgEditorEmails" rows="3" placeholder="finance.manager@example.org, admin@example.org"></textarea>
+          <div class="hint-text">Primary role lookup: <code>users/{uid}.role</code>. If absent, verified emails in this list are treated as editors. Lock down that role field with Firestore security rules.</div>
+        </div>
+        <div class="inline-actions">
+          <button class="btn btn-primary" onclick="saveFirebaseConfig()">Save Config</button>
+          <button class="btn btn-outline" onclick="clearFirebaseConfig()">Clear Config</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Actions -->
-  <div style="margin:1.5rem 0; text-align:right;">
-    <button class="btn btn-primary" onclick="openModal()">
-      <i class="fas fa-plus"></i> New Transaction
-    </button>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Income</div>
+      <div class="stat-value" id="totalIncome">R 0</div>
+      <div class="stat-trend" id="incomeTrend"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Expenses</div>
+      <div class="stat-value" id="totalExpense">R 0</div>
+      <div class="stat-trend" id="expenseTrend"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Net Surplus</div>
+      <div class="stat-value" id="netSurplus" style="color:var(--success)">R 0</div>
+      <div class="stat-trend" id="surplusTrend"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Donations Received</div>
+      <div class="stat-value" id="totalDonations">R 0</div>
+      <div class="stat-trend" id="donationsTrend"></div>
+    </div>
+  </div>
+
+  <div style="margin:1.5rem 0; display:flex; justify-content:space-between; gap:0.75rem; flex-wrap:wrap; align-items:center;">
+    <div class="hint-text" id="dataSourceLabel">Showing local demo transactions.</div>
+    <div class="inline-actions">
+      <button class="btn btn-outline" onclick="exportCsv()"><i class="fas fa-file-csv"></i> Export CSV</button>
+      <button class="btn btn-outline" onclick="exportPdf()"><i class="fas fa-file-pdf"></i> Export PDF</button>
+      <button class="btn btn-primary" id="openTransactionBtn" onclick="openModal()">
+        <i class="fas fa-plus"></i> New Transaction
+      </button>
+    </div>
   </div>
 
   <div class="card">
     <div class="card-header">
       <div class="card-title">Firestore Root Collections Blueprint</div>
-      <div class="hint-text">Static demo wired to the requested top-level collections</div>
+      <div class="hint-text" id="collectionsHint">Counts update from the active local or Firestore-backed dataset.</div>
     </div>
     <div class="collection-grid" id="collectionsOverview"></div>
   </div>
 
-  <!-- Transactions Table -->
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Recent Transactions</div>
       <div>
-        <input type="text" placeholder="Search..." style="padding:0.6rem; border:1px solid #d1d5db; border-radius:6px; width:220px;">
+        <div class="card-title">Transactions</div>
+        <div class="hint-text">Search, filter, and paginate the selected reporting month.</div>
+      </div>
+      <div style="min-width:260px; width:100%; max-width:320px;">
+        <input type="text" id="searchInput" placeholder="Search description, reference, account, fund, program..." />
+      </div>
+    </div>
+    <div class="filters-grid">
+      <div class="form-group" style="margin:0;">
+        <label>Type</label>
+        <select id="typeFilter"></select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Fund</label>
+        <select id="fundFilter"></select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Program</label>
+        <select id="programFilter"></select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Rows per page</label>
+        <select id="pageSizeFilter">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+        </select>
       </div>
     </div>
     <div style="overflow-x:auto;">
@@ -341,7 +566,7 @@
             <th>Date</th>
             <th>Entity</th>
             <th>Type</th>
-            <th>Fund</th>
+            <th>Fund / Program</th>
             <th>Description</th>
             <th>Accounts</th>
             <th>Reference</th>
@@ -350,16 +575,25 @@
           </tr>
         </thead>
         <tbody>
-          <!-- Filled by JS -->
+          <tr><td colspan="9" class="table-empty">Loading transactions…</td></tr>
         </tbody>
       </table>
     </div>
+    <div class="card-footer pager">
+      <div id="paginationSummary" class="hint-text">Showing 0 of 0 records</div>
+      <div class="inline-actions">
+        <button class="btn btn-outline" id="prevPageBtn" onclick="changePage(-1)">Previous</button>
+        <button class="btn btn-outline" id="nextPageBtn" onclick="changePage(1)">Next</button>
+      </div>
+    </div>
   </div>
 
-  <!-- Simple Chart -->
   <div class="card">
     <div class="card-header">
-      <div class="card-title">Monthly Income vs Expenses (2026)</div>
+      <div>
+        <div class="card-title" id="chartTitle">Monthly Income vs Expenses</div>
+        <div class="hint-text" id="chartSubtitle">Selected year with prior-year comparison.</div>
+      </div>
     </div>
     <div style="padding:1.5rem;">
       <canvas id="financeChart" height="140"></canvas>
@@ -368,7 +602,6 @@
 
 </div>
 
-<!-- Modal -->
 <div class="modal-overlay" id="transactionModal">
   <div class="modal">
     <div class="modal-header">
@@ -376,6 +609,7 @@
       <button style="background:none;border:none;font-size:1.4rem;cursor:pointer;" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
+      <div class="notice" style="margin:0 0 1rem;">Inter-entity transfers save two linked records: one outgoing entry and one receiving entry.</div>
 
       <div class="form-group">
         <label>Entity</label>
@@ -395,7 +629,7 @@
       <div class="form-row">
         <div class="form-group">
           <label>Date</label>
-          <input type="date" id="modalDate" value="2026-03-15"/>
+          <input type="date" id="modalDate" />
         </div>
         <div class="form-group">
           <label>Amount (ZAR)</label>
@@ -420,8 +654,19 @@
           <select id="modalFund"></select>
         </div>
         <div class="form-group">
+          <label>Program</label>
+          <select id="modalProgram"></select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
           <label>Reference</label>
           <input type="text" id="modalReference" placeholder="ENV1234 / EFT20260315"/>
+        </div>
+        <div class="form-group" id="transferToRow" style="display:none;">
+          <label>Transfer To</label>
+          <select id="modalTransferTo"></select>
         </div>
       </div>
 
@@ -430,130 +675,235 @@
         <input type="text" id="modalDesc" placeholder="Sunday offering / Food purchase / etc."/>
       </div>
 
-      <div class="form-group" id="transferToRow" style="display:none;">
-        <label>Transfer To</label>
-        <select id="modalTransferTo"></select>
-      </div>
-
       <div style="margin-top:1.5rem; text-align:right;">
         <button class="btn" style="margin-right:0.75rem;" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="addTransaction()">Save Transaction</button>
+        <button class="btn btn-primary" id="saveTransactionBtn" onclick="addTransaction()">Save Transaction</button>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const LOCAL_KEYS = {
+  firebaseConfig: "financeDashboard.firebaseConfig",
+  localTransactions: "financeDashboard.localTransactions"
+};
+
+const defaultEntities = [
+  { docId: "entity_charity-faith", id: "charity-faith", name: "Charity & Faith Mission", type: "church", currency: "ZAR", active: true, settings: { reportingMonthStart: 1, defaultProgram: "program_ministry" } },
+  { docId: "entity_bophelong-children", id: "bophelong-children", name: "Bophelong Children’s Home", type: "children-home", currency: "ZAR", active: true, settings: { programFocus: "orphan-care", defaultProgram: "program_orphan-care" } },
+  { docId: "entity_bophelong-oldage", id: "bophelong-oldage", name: "Bophelong Old Age Home", type: "old-age-home", currency: "ZAR", active: true, settings: { programFocus: "elder-care", defaultProgram: "program_elder-care" } },
+  { docId: "entity_bophelong-admin", id: "bophelong-admin", name: "Bophelong Admin / Clinic", type: "admin", currency: "ZAR", active: true, settings: { sharedServices: true, defaultProgram: "program_clinic" } }
+];
+
+const defaultChartOfAccounts = [
+  { id: "income_tithes-offerings", name: "Tithes & Offerings", category: "income" },
+  { id: "income_donations", name: "Donations", category: "income" },
+  { id: "income_grants", name: "Grant Income", category: "income" },
+  { id: "expense_food-nutrition", name: "Food & Nutrition", category: "expense" },
+  { id: "expense_salaries", name: "Salaries", category: "expense" },
+  { id: "expense_medical-supplies", name: "Medical Supplies", category: "expense" },
+  { id: "assets_cash", name: "Cash", category: "asset" },
+  { id: "assets_bank", name: "Bank", category: "asset" }
+];
+
+const defaultFunds = [
+  { id: "fund_general", name: "General Fund" },
+  { id: "fund_building", name: "Building Fund" },
+  { id: "fund_missions", name: "Missions Fund" },
+  { id: "fund_orphan-care", name: "Orphan Care Fund" },
+  { id: "fund_elder-care", name: "Elder Care Fund" }
+];
+
+const defaultPrograms = [
+  { id: "program_ministry", name: "Worship & Ministry" },
+  { id: "program_outreach", name: "Community Outreach" },
+  { id: "program_orphan-care", name: "Orphan Care" },
+  { id: "program_elder-care", name: "Elder Care" },
+  { id: "program_clinic", name: "Clinic Services" }
+];
+
+const defaultTransactions = [
+  {
+    id: "tx_20260314_tithes",
+    entityId: "charity-faith",
+    date: "2026-03-14",
+    type: "income",
+    amount: 28450,
+    currency: "ZAR",
+    debitAccount: "assets_cash",
+    creditAccount: "income_tithes-offerings",
+    fundId: "fund_general",
+    programId: "program_ministry",
+    description: "Sunday offering deposit for 9 March service",
+    reference: "ENV1234",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-03-14T08:15:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260313_food",
+    entityId: "bophelong-children",
+    date: "2026-03-13",
+    type: "expense",
+    amount: 18760,
+    currency: "ZAR",
+    debitAccount: "expense_food-nutrition",
+    creditAccount: "assets_bank",
+    fundId: "fund_orphan-care",
+    programId: "program_orphan-care",
+    description: "Food & Nutrition supplies",
+    reference: "INV2026-443",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-03-13T10:00:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260312_donation",
+    entityId: "bophelong-oldage",
+    date: "2026-03-12",
+    type: "donation",
+    amount: 50000,
+    currency: "ZAR",
+    debitAccount: "assets_bank",
+    creditAccount: "income_donations",
+    fundId: "fund_elder-care",
+    programId: "program_elder-care",
+    description: "Corporate sponsor contribution",
+    reference: "DON-7788",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-03-12T11:45:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260311_transfer_out",
+    entityId: "charity-faith",
+    date: "2026-03-11",
+    type: "transfer",
+    transferDirection: "out",
+    amount: 25000,
+    currency: "ZAR",
+    debitAccount: "assets_bank",
+    creditAccount: "assets_bank",
+    fundId: "fund_missions",
+    programId: "program_outreach",
+    description: "Support children home outreach",
+    reference: "TRF-105",
+    createdBy: "demo-user",
+    interEntity: { fromEntity: "charity-faith", toEntity: "bophelong-children", linkedTransactionId: "tx_20260311_transfer_in" },
+    auditTrail: [{ when: "2026-03-11T07:30:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260311_transfer_in",
+    entityId: "bophelong-children",
+    date: "2026-03-11",
+    type: "transfer",
+    transferDirection: "in",
+    amount: 25000,
+    currency: "ZAR",
+    debitAccount: "assets_bank",
+    creditAccount: "assets_bank",
+    fundId: "fund_orphan-care",
+    programId: "program_outreach",
+    description: "Transfer received from Charity & Faith Mission",
+    reference: "TRF-105-R",
+    createdBy: "demo-user",
+    interEntity: { fromEntity: "charity-faith", toEntity: "bophelong-children", linkedTransactionId: "tx_20260311_transfer_out" },
+    auditTrail: [{ when: "2026-03-11T07:31:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260310_medical",
+    entityId: "bophelong-admin",
+    date: "2026-03-10",
+    type: "expense",
+    amount: 12400,
+    currency: "ZAR",
+    debitAccount: "expense_medical-supplies",
+    creditAccount: "assets_cash",
+    fundId: "fund_general",
+    programId: "program_clinic",
+    description: "Medical supplies restock",
+    reference: "MED-210",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-03-10T09:20:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260218_donation",
+    entityId: "charity-faith",
+    date: "2026-02-18",
+    type: "donation",
+    amount: 32000,
+    currency: "ZAR",
+    debitAccount: "assets_bank",
+    creditAccount: "income_donations",
+    fundId: "fund_building",
+    programId: "program_ministry",
+    description: "Building pledge collection",
+    reference: "DON-541",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-02-18T12:20:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20260207_expense",
+    entityId: "bophelong-oldage",
+    date: "2026-02-07",
+    type: "expense",
+    amount: 14400,
+    currency: "ZAR",
+    debitAccount: "expense_food-nutrition",
+    creditAccount: "assets_bank",
+    fundId: "fund_elder-care",
+    programId: "program_elder-care",
+    description: "Monthly groceries and hygiene supplies",
+    reference: "INV2026-221",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2026-02-07T08:05:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20250316_donation",
+    entityId: "bophelong-children",
+    date: "2025-03-16",
+    type: "donation",
+    amount: 41000,
+    currency: "ZAR",
+    debitAccount: "assets_bank",
+    creditAccount: "income_donations",
+    fundId: "fund_orphan-care",
+    programId: "program_orphan-care",
+    description: "International donor support",
+    reference: "DON-2025-16",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2025-03-16T10:30:00Z", who: "demo-user", action: "created" }]
+  },
+  {
+    id: "tx_20250309_expense",
+    entityId: "charity-faith",
+    date: "2025-03-09",
+    type: "expense",
+    amount: 9200,
+    currency: "ZAR",
+    debitAccount: "expense_salaries",
+    creditAccount: "assets_bank",
+    fundId: "fund_general",
+    programId: "program_ministry",
+    description: "Music ministry stipends",
+    reference: "SAL-2025-03",
+    createdBy: "demo-user",
+    auditTrail: [{ when: "2025-03-09T15:00:00Z", who: "demo-user", action: "created" }]
+  }
+];
+
 const db = {
-  entities: [
-    { docId: "entity_charity-faith", id: "charity-faith", name: "Charity & Faith Mission", type: "church", currency: "ZAR", active: true, settings: { reportingMonthStart: 1 } },
-    { docId: "entity_bophelong-children", id: "bophelong-children", name: "Bophelong Children’s Home", type: "children-home", currency: "ZAR", active: true, settings: { programFocus: "orphan-care" } },
-    { docId: "entity_bophelong-oldage", id: "bophelong-oldage", name: "Bophelong Old Age Home", type: "old-age-home", currency: "ZAR", active: true, settings: { programFocus: "elder-care" } },
-    { docId: "entity_bophelong-admin", id: "bophelong-admin", name: "Bophelong Admin / Clinic", type: "admin", currency: "ZAR", active: true, settings: { sharedServices: true } }
-  ],
-  chartOfAccounts: [
-    { id: "income_tithes-offerings", name: "Tithes & Offerings", category: "income" },
-    { id: "income_donations", name: "Donations", category: "income" },
-    { id: "income_grants", name: "Grant Income", category: "income" },
-    { id: "expense_food-nutrition", name: "Food & Nutrition", category: "expense" },
-    { id: "expense_salaries", name: "Salaries", category: "expense" },
-    { id: "expense_medical-supplies", name: "Medical Supplies", category: "expense" },
-    { id: "assets_cash", name: "Cash", category: "asset" },
-    { id: "assets_bank", name: "Bank", category: "asset" }
-  ],
-  funds: [
-    { id: "fund_general", name: "General Fund" },
-    { id: "fund_building", name: "Building Fund" },
-    { id: "fund_missions", name: "Missions Fund" },
-    { id: "fund_orphan-care", name: "Orphan Care Fund" },
-    { id: "fund_elder-care", name: "Elder Care Fund" }
-  ],
-  transactions: [
-    {
-      id: "tx_20260314_tithes",
-      entityId: "charity-faith",
-      date: "2026-03-14",
-      type: "income",
-      amount: 28450,
-      currency: "ZAR",
-      debitAccount: "assets_cash",
-      creditAccount: "income_tithes-offerings",
-      fundId: "fund_general",
-      description: "Sunday offering deposit for 9 March service",
-      reference: "ENV1234",
-      createdBy: "demo-user",
-      auditTrail: [{ when: "2026-03-14T08:15:00Z", who: "demo-user", action: "created" }]
-    },
-    {
-      id: "tx_20260313_food",
-      entityId: "bophelong-children",
-      date: "2026-03-13",
-      type: "expense",
-      amount: 18760,
-      currency: "ZAR",
-      debitAccount: "expense_food-nutrition",
-      creditAccount: "assets_bank",
-      fundId: "fund_orphan-care",
-      description: "Food & Nutrition supplies",
-      reference: "INV2026-443",
-      createdBy: "demo-user",
-      auditTrail: [{ when: "2026-03-13T10:00:00Z", who: "demo-user", action: "created" }]
-    },
-    {
-      id: "tx_20260312_donation",
-      entityId: "bophelong-oldage",
-      date: "2026-03-12",
-      type: "donation",
-      amount: 50000,
-      currency: "ZAR",
-      debitAccount: "assets_bank",
-      creditAccount: "income_donations",
-      fundId: "fund_elder-care",
-      description: "Corporate sponsor contribution",
-      reference: "DON-7788",
-      createdBy: "demo-user",
-      auditTrail: [{ when: "2026-03-12T11:45:00Z", who: "demo-user", action: "created" }]
-    },
-    {
-      id: "tx_20260311_transfer",
-      entityId: "charity-faith",
-      date: "2026-03-11",
-      type: "transfer",
-      amount: 25000,
-      currency: "ZAR",
-      debitAccount: "assets_bank",
-      creditAccount: "assets_bank",
-      fundId: "fund_missions",
-      description: "Support children home outreach",
-      reference: "TRF-105",
-      createdBy: "demo-user",
-      interEntity: { fromEntity: "charity-faith", toEntity: "bophelong-children" },
-      auditTrail: [{ when: "2026-03-11T07:30:00Z", who: "demo-user", action: "created" }]
-    },
-    {
-      id: "tx_20260310_medical",
-      entityId: "bophelong-admin",
-      date: "2026-03-10",
-      type: "expense",
-      amount: 12400,
-      currency: "ZAR",
-      debitAccount: "expense_medical-supplies",
-      creditAccount: "assets_cash",
-      fundId: "fund_general",
-      description: "Medical supplies restock",
-      reference: "MED-210",
-      createdBy: "demo-user",
-      auditTrail: [{ when: "2026-03-10T09:20:00Z", who: "demo-user", action: "created" }]
-    }
-  ],
+  entities: defaultEntities,
+  chartOfAccounts: defaultChartOfAccounts,
+  funds: defaultFunds,
+  programs: defaultPrograms,
+  transactions: [],
   consolidationRuns: [
     {
       id: "run_2026-03-31",
       period: "2026-03",
       generatedAt: "2026-03-31T17:00:00Z",
-      totals: { income: 78450, expense: 31160, surplus: 47290 },
-      eliminations: [{ sourceTxId: "tx_20260311_transfer", pairedEntity: "bophelong-children" }]
+      totals: { income: 103450, expense: 31160, surplus: 72290 },
+      eliminations: [{ sourceTxId: "tx_20260311_transfer_out", pairedEntity: "bophelong-children" }]
     }
   ]
 };
@@ -561,12 +911,80 @@ const db = {
 const entityMap = Object.fromEntries(db.entities.map(entity => [entity.id, entity]));
 const accountMap = Object.fromEntries(db.chartOfAccounts.map(account => [account.id, account]));
 const fundMap = Object.fromEntries(db.funds.map(fund => [fund.id, fund]));
+const programMap = Object.fromEntries(db.programs.map(program => [program.id, program]));
+
+const state = {
+  selectedEntity: "all",
+  selectedType: "all",
+  selectedFund: "all",
+  selectedProgram: "all",
+  search: "",
+  page: 1,
+  pageSize: 10,
+  periodMonth: 3,
+  periodYear: 2026,
+  chart: null,
+  firebaseConfigured: false,
+  firebaseAvailable: typeof window.firebase !== "undefined",
+  firebaseAuth: null,
+  firebaseDb: null,
+  firebaseUnsubscribe: null,
+  authUser: null,
+  role: "editor",
+  usingFirestore: false,
+  statusMessage: ""
+};
 
 function createOption(value, label) {
   const option = document.createElement("option");
   option.value = value;
   option.textContent = label;
   return option;
+}
+
+function clone(value) {
+  if (typeof window.structuredClone === "function") {
+    return window.structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function getStoredFirebaseConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_KEYS.firebaseConfig) || "null");
+  } catch (error) {
+    console.warn("Unable to parse saved Firebase config", error);
+    return null;
+  }
+}
+
+function getDefaultTransactions() {
+  return clone(defaultTransactions);
+}
+
+function loadLocalTransactions() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LOCAL_KEYS.localTransactions) || "null");
+    return Array.isArray(stored) ? stored : getDefaultTransactions();
+  } catch (error) {
+    console.warn("Unable to parse local transactions", error);
+    return getDefaultTransactions();
+  }
+}
+
+function saveLocalTransactions() {
+  try {
+    localStorage.setItem(LOCAL_KEYS.localTransactions, JSON.stringify(db.transactions));
+  } catch (error) {
+    console.warn("Unable to store local transactions", error);
+  }
+}
+
+function sortTransactions(transactions) {
+  return [...transactions].sort((a, b) => {
+    const dateCompare = String(b.date || "").localeCompare(String(a.date || ""));
+    return dateCompare !== 0 ? dateCompare : String(b.id || "").localeCompare(String(a.id || ""));
+  });
 }
 
 function createTransactionId(date) {
@@ -584,6 +1002,118 @@ function createTransactionId(date) {
   throw new Error("Secure transaction ID generation is unavailable in this browser.");
 }
 
+function formatCurrency(amount) {
+  return `R ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+function formatMonthYear(month, year) {
+  return `${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+function getPriorPeriod(month, year) {
+  return month === 1 ? { month: 12, year: year - 1 } : { month: month - 1, year };
+}
+
+function matchesPeriod(transaction, month, year) {
+  if (!transaction?.date) return false;
+  const [txYear, txMonth] = transaction.date.split("-").map(Number);
+  return txYear === Number(year) && txMonth === Number(month);
+}
+
+function getPeriodTransactions(month = state.periodMonth, year = state.periodYear) {
+  return db.transactions.filter(transaction => matchesPeriod(transaction, month, year));
+}
+
+function sumByType(transactions, predicate) {
+  return transactions.filter(predicate).reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+}
+
+function getPeriodSummary(month = state.periodMonth, year = state.periodYear) {
+  const periodTransactions = getPeriodTransactions(month, year);
+  const income = sumByType(periodTransactions, transaction => ["income", "donation"].includes(transaction.type));
+  const expense = sumByType(periodTransactions, transaction => transaction.type === "expense");
+  const donations = sumByType(periodTransactions, transaction => transaction.type === "donation");
+  return { income, expense, donations, surplus: income - expense };
+}
+
+function buildTrendHtml(current, previous, label, lowerIsBetter = false) {
+  if (!previous) {
+    return `<span class="warning-text"><i class="fas fa-minus"></i> No ${label.toLowerCase()} data</span>`;
+  }
+
+  if (previous === 0) {
+    const cssClass = current === 0 ? "warning-text" : (lowerIsBetter ? "negative" : "positive");
+    const icon = current === 0 ? "fa-minus" : "fa-arrow-up";
+    return `<span class="${cssClass}"><i class="fas ${icon}"></i> Started from zero vs ${label}</span>`;
+  }
+
+  const percent = ((current - previous) / previous) * 100;
+  const improved = lowerIsBetter ? percent <= 0 : percent >= 0;
+  const icon = percent >= 0 ? "fa-arrow-up" : "fa-arrow-down";
+  const cssClass = improved ? "positive" : "negative";
+  return `<span class="${cssClass}"><i class="fas ${icon}"></i> ${Math.abs(percent).toFixed(1)}% vs ${label}</span>`;
+}
+
+function getBalanceImpact(transaction) {
+  if (transaction.type === "expense") {
+    return { label: "−", color: "var(--danger)" };
+  }
+
+  if (transaction.type === "transfer") {
+    const destinationId = transaction.interEntity?.toEntity;
+    const sourceId = transaction.interEntity?.fromEntity;
+    if (transaction.transferDirection === "in") {
+      const source = entityMap[sourceId]?.name || sourceId || "Unknown source";
+      return { label: `+ ← ${source}`, color: "var(--success)" };
+    }
+
+    const destination = entityMap[destinationId]?.name || destinationId || "Unknown destination";
+    return { label: `− → ${destination}`, color: "var(--warning)" };
+  }
+
+  return { label: "+", color: "var(--success)" };
+}
+
+function getTransactionSearchText(transaction) {
+  return [
+    transaction.date,
+    entityMap[transaction.entityId]?.name,
+    transaction.description,
+    transaction.reference,
+    accountMap[transaction.debitAccount]?.name,
+    accountMap[transaction.creditAccount]?.name,
+    fundMap[transaction.fundId]?.name,
+    programMap[transaction.programId]?.name,
+    transaction.transferDirection
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function getFilteredTransactions() {
+  const filtered = sortTransactions(getPeriodTransactions()).filter(transaction => {
+    if (state.selectedEntity !== "all" && transaction.entityId !== state.selectedEntity) return false;
+    if (state.selectedType !== "all" && transaction.type !== state.selectedType) return false;
+    if (state.selectedFund !== "all" && (transaction.fundId || "none") !== state.selectedFund) return false;
+    if (state.selectedProgram !== "all" && (transaction.programId || "none") !== state.selectedProgram) return false;
+    if (state.search && !getTransactionSearchText(transaction).includes(state.search)) return false;
+    return true;
+  });
+
+  return filtered;
+}
+
+function getCurrentPageData() {
+  const filtered = getFilteredTransactions();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / state.pageSize));
+  state.page = Math.min(state.page, totalPages);
+  const start = (state.page - 1) * state.pageSize;
+  return {
+    filtered,
+    totalPages,
+    start,
+    rows: filtered.slice(start, start + state.pageSize)
+  };
+}
+
 function populateEntityOptions() {
   const entityFilter = document.getElementById("entityFilter");
   const modalEntity = document.getElementById("modalEntity");
@@ -596,13 +1126,16 @@ function populateEntityOptions() {
   entityFilter.appendChild(createOption("all", "All Entities"));
   transferTo.appendChild(createOption("", "— Select destination —"));
 
-  db.entities
-    .filter(entity => entity.active)
-    .forEach(entity => {
-      entityFilter.appendChild(createOption(entity.id, entity.name));
-      modalEntity.appendChild(createOption(entity.id, entity.name));
-      transferTo.appendChild(createOption(entity.id, entity.name));
-    });
+  db.entities.filter(entity => entity.active).forEach(entity => {
+    entityFilter.appendChild(createOption(entity.id, entity.name));
+    modalEntity.appendChild(createOption(entity.id, entity.name));
+    transferTo.appendChild(createOption(entity.id, entity.name));
+  });
+
+  entityFilter.value = state.selectedEntity;
+  if (state.selectedEntity !== "all") {
+    modalEntity.value = state.selectedEntity;
+  }
 }
 
 function populateAccountOptions() {
@@ -623,87 +1156,130 @@ function populateAccountOptions() {
 }
 
 function populateFundOptions() {
-  const fundSelect = document.getElementById("modalFund");
-  fundSelect.innerHTML = "";
-  fundSelect.appendChild(createOption("", "Unrestricted / none"));
+  const modalFund = document.getElementById("modalFund");
+  const fundFilter = document.getElementById("fundFilter");
+
+  modalFund.innerHTML = "";
+  fundFilter.innerHTML = "";
+  modalFund.appendChild(createOption("", "Unrestricted / none"));
+  fundFilter.appendChild(createOption("all", "All Funds"));
+  fundFilter.appendChild(createOption("none", "Unrestricted / none"));
 
   db.funds.forEach(fund => {
-    fundSelect.appendChild(createOption(fund.id, fund.name));
+    modalFund.appendChild(createOption(fund.id, fund.name));
+    fundFilter.appendChild(createOption(fund.id, fund.name));
   });
 
-  fundSelect.value = "fund_general";
+  modalFund.value = "fund_general";
+  fundFilter.value = state.selectedFund;
 }
 
-function formatCurrency(amount) {
-  return `R ${amount.toLocaleString()}`;
+function populateProgramOptions() {
+  const modalProgram = document.getElementById("modalProgram");
+  const programFilter = document.getElementById("programFilter");
+
+  modalProgram.innerHTML = "";
+  programFilter.innerHTML = "";
+  modalProgram.appendChild(createOption("", "General / none"));
+  programFilter.appendChild(createOption("all", "All Programs"));
+  programFilter.appendChild(createOption("none", "General / none"));
+
+  db.programs.forEach(program => {
+    modalProgram.appendChild(createOption(program.id, program.name));
+    programFilter.appendChild(createOption(program.id, program.name));
+  });
+
+  programFilter.value = state.selectedProgram;
 }
 
-function getBalanceImpact(transaction) {
-  if (transaction.type === "expense") {
-    return { label: "−", color: "var(--danger)" };
-  }
+function populateTypeOptions() {
+  const typeFilter = document.getElementById("typeFilter");
+  typeFilter.innerHTML = "";
+  [
+    ["all", "All Types"],
+    ["income", "Income"],
+    ["expense", "Expense"],
+    ["donation", "Donation"],
+    ["transfer", "Transfer"]
+  ].forEach(([value, label]) => typeFilter.appendChild(createOption(value, label)));
+  typeFilter.value = state.selectedType;
+}
 
-  if (transaction.type === "transfer") {
-    const destinationId = transaction.interEntity?.toEntity;
-    const destination = entityMap[destinationId]?.name || (destinationId ? `${destinationId} (missing)` : "Unknown destination");
-    return { label: `− → ${destination}`, color: "var(--warning)" };
-  }
+function populatePeriodOptions() {
+  const monthSelect = document.getElementById("periodMonth");
+  const yearSelect = document.getElementById("periodYear");
+  const availableYears = new Set([new Date().getFullYear(), state.periodYear]);
 
-  return { label: "+", color: "var(--success)" };
+  db.transactions.forEach(transaction => {
+    const year = Number(String(transaction.date || "").split("-")[0]);
+    if (year) availableYears.add(year);
+  });
+
+  monthSelect.innerHTML = "";
+  yearSelect.innerHTML = "";
+
+  MONTH_NAMES.forEach((monthName, index) => {
+    monthSelect.appendChild(createOption(String(index + 1), monthName));
+  });
+
+  Array.from(availableYears).sort((a, b) => b - a).forEach(year => {
+    yearSelect.appendChild(createOption(String(year), String(year)));
+  });
+
+  monthSelect.value = String(state.periodMonth);
+  yearSelect.value = String(state.periodYear);
 }
 
 function renderCollectionsOverview() {
   const overview = document.getElementById("collectionsOverview");
   overview.innerHTML = "";
-
   const sampleLimit = 3;
   const rootCollections = [
     { name: "entities", count: db.entities.length, description: "Organization entities and entity-level settings.", sample: db.entities.slice(0, sampleLimit).map(entity => entity.docId).join(" • ") },
     { name: "chart_of_accounts", count: db.chartOfAccounts.length, description: "Shared double-entry account definitions.", sample: db.chartOfAccounts.slice(0, sampleLimit).map(account => account.id).join(" • ") },
     { name: "funds", count: db.funds.length, description: "Restricted and unrestricted nonprofit funds.", sample: db.funds.slice(0, sampleLimit).map(fund => fund.id).join(" • ") },
-    { name: "transactions", count: db.transactions.length, description: "Central fact records for finance activity.", sample: db.transactions.slice(0, sampleLimit).map(transaction => transaction.id).join(" • ") },
-    { name: "consolidation_runs", count: db.consolidationRuns.length, description: "Period-end snapshots and eliminations.", sample: db.consolidationRuns.slice(0, sampleLimit).map(run => run.id).join(" • ") }
+    { name: "programs", count: db.programs.length, description: "Program tagging for operational analysis.", sample: db.programs.slice(0, sampleLimit).map(program => program.id).join(" • ") },
+    { name: "transactions", count: db.transactions.length, description: "Central fact records for finance activity and linked transfers.", sample: db.transactions.slice(0, sampleLimit).map(transaction => transaction.id).join(" • ") },
+    { name: "users", count: state.authUser ? 1 : 0, description: "Viewer/editor role lookup documents for authenticated users.", sample: state.authUser ? state.authUser.uid : "Awaiting sign-in" }
   ];
 
   rootCollections.forEach(collection => {
     const card = document.createElement("div");
     card.className = "collection-card";
-
-    const title = document.createElement("h3");
-    title.textContent = collection.name;
-
-    const count = document.createElement("div");
-    count.className = "collection-count";
-    count.textContent = collection.count;
-
-    const description = document.createElement("div");
-    description.className = "hint-text";
-    description.textContent = collection.description;
-
-    const sample = document.createElement("code");
-    sample.textContent = collection.sample;
-
-    card.append(title, count, description, sample);
+    card.innerHTML = `
+      <h3>${collection.name}</h3>
+      <div class="collection-count">${collection.count}</div>
+      <div class="hint-text">${collection.description}</div>
+      <code>${collection.sample || "—"}</code>
+    `;
     overview.appendChild(card);
   });
 }
 
-function renderTransactions(filter = "all") {
+function renderTransactions() {
   const tbody = document.querySelector("#transactionsTable tbody");
+  const { filtered, totalPages, start, rows } = getCurrentPageData();
   tbody.innerHTML = "";
 
-  const filtered = filter === "all"
-    ? db.transactions
-    : db.transactions.filter(transaction => transaction.entityId === filter);
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="table-empty">No transactions match the current month, filters, and search.</td></tr>`;
+  }
 
-  filtered.forEach(transaction => {
+  rows.forEach(transaction => {
     const row = document.createElement("tr");
     const impact = getBalanceImpact(transaction);
+    const directionLabel = transaction.type === "transfer" ? `transfer ${transaction.transferDirection || "out"}` : transaction.type;
+    const tagCell = document.createElement("td");
+    tagCell.innerHTML = `
+      <span class="tag-badge">${fundMap[transaction.fundId]?.name || "Unrestricted"}</span>
+      <span class="tag-badge">${programMap[transaction.programId]?.name || "General"}</span>
+    `;
+
     const cells = [
       transaction.date,
       entityMap[transaction.entityId]?.name || transaction.entityId,
-      null,
-      fundMap[transaction.fundId]?.name || "Unrestricted",
+      directionLabel,
+      tagCell,
       transaction.description,
       `${accountMap[transaction.debitAccount]?.name || transaction.debitAccount} → ${accountMap[transaction.creditAccount]?.name || transaction.creditAccount}`,
       transaction.reference || "—",
@@ -713,12 +1289,13 @@ function renderTransactions(filter = "all") {
 
     cells.forEach((value, index) => {
       const cell = document.createElement("td");
-
       if (index === 2) {
         const badge = document.createElement("span");
         badge.className = `type-badge badge-${transaction.type}`;
-        badge.textContent = transaction.type;
+        badge.textContent = value;
         cell.appendChild(badge);
+      } else if (index === 3) {
+        cell.appendChild(value);
       } else {
         cell.textContent = value;
       }
@@ -736,10 +1313,183 @@ function renderTransactions(filter = "all") {
 
     tbody.appendChild(row);
   });
+
+  const shownEnd = rows.length ? start + rows.length : 0;
+  document.getElementById("paginationSummary").textContent = `Showing ${rows.length ? start + 1 : 0}-${shownEnd} of ${filtered.length} records`;
+  document.getElementById("prevPageBtn").disabled = state.page <= 1;
+  document.getElementById("nextPageBtn").disabled = state.page >= totalPages;
+}
+
+function updatePeriodLabel() {
+  const priorPeriod = getPriorPeriod(state.periodMonth, state.periodYear);
+  document.getElementById("periodLabel").textContent = `Consolidated view • ${formatMonthYear(state.periodMonth, state.periodYear)} • vs ${formatMonthYear(priorPeriod.month, priorPeriod.year)} and ${formatMonthYear(state.periodMonth, state.periodYear - 1)}`;
+  document.getElementById("chartTitle").textContent = `Monthly Income vs Expenses • ${state.periodYear}`;
+  document.getElementById("chartSubtitle").textContent = `Selected month: ${formatMonthYear(state.periodMonth, state.periodYear)} with ${state.periodYear - 1} comparison.`;
+}
+
+function updateKPIs() {
+  const current = getPeriodSummary(state.periodMonth, state.periodYear);
+  const prior = getPriorPeriod(state.periodMonth, state.periodYear);
+  const previous = getPeriodSummary(prior.month, prior.year);
+
+  document.getElementById("totalIncome").textContent = formatCurrency(current.income);
+  document.getElementById("totalExpense").textContent = formatCurrency(current.expense);
+  document.getElementById("netSurplus").textContent = formatCurrency(current.surplus);
+  document.getElementById("totalDonations").textContent = formatCurrency(current.donations);
+  document.getElementById("netSurplus").style.color = current.surplus >= 0 ? "var(--success)" : "var(--danger)";
+
+  const priorLabel = formatMonthYear(prior.month, prior.year);
+  document.getElementById("incomeTrend").innerHTML = buildTrendHtml(current.income, previous.income, priorLabel);
+  document.getElementById("expenseTrend").innerHTML = buildTrendHtml(current.expense, previous.expense, priorLabel, true);
+  document.getElementById("surplusTrend").innerHTML = buildTrendHtml(current.surplus, previous.surplus, priorLabel);
+  document.getElementById("donationsTrend").innerHTML = buildTrendHtml(current.donations, previous.donations, priorLabel);
+}
+
+function renderChart() {
+  const chartContainer = document.getElementById("financeChart").parentElement;
+  const canvas = document.getElementById("financeChart");
+  if (!window.Chart) {
+    let fallback = document.getElementById("chartFallback");
+    if (!fallback) {
+      fallback = document.createElement("div");
+      fallback.id = "chartFallback";
+      fallback.className = "hint-text";
+      fallback.textContent = "Chart preview unavailable in this environment, but the transactions data is loaded below.";
+      chartContainer.appendChild(fallback);
+    }
+    canvas.style.display = "none";
+    return;
+  }
+
+  const fallback = document.getElementById("chartFallback");
+  if (fallback) fallback.remove();
+  canvas.style.display = "block";
+
+  const currentYear = Number(state.periodYear);
+  const previousYear = currentYear - 1;
+  const monthlyData = year => MONTH_NAMES.map((_, monthIndex) => {
+    const month = monthIndex + 1;
+    const summary = getPeriodSummary(month, year);
+    return { income: summary.income, expense: summary.expense };
+  });
+
+  const currentSeries = monthlyData(currentYear);
+  const previousSeries = monthlyData(previousYear);
+
+  if (state.chart) {
+    state.chart.destroy();
+  }
+
+  state.chart = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: MONTH_NAMES.map(name => name.slice(0, 3)),
+      datasets: [
+        { label: `${currentYear} Income`, data: currentSeries.map(item => item.income), backgroundColor: "rgba(52,199,89,0.65)" },
+        { label: `${currentYear} Expenses`, data: currentSeries.map(item => item.expense), backgroundColor: "rgba(255,59,48,0.55)" },
+        { label: `${previousYear} Income`, data: previousSeries.map(item => item.income), borderColor: "rgba(52,199,89,1)", backgroundColor: "rgba(52,199,89,0.05)", type: "line", tension: 0.35 },
+        { label: `${previousYear} Expenses`, data: previousSeries.map(item => item.expense), borderColor: "rgba(255,59,48,1)", backgroundColor: "rgba(255,59,48,0.05)", type: "line", tension: 0.35 }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+function updateDataSourceLabel() {
+  const label = state.usingFirestore && state.authUser
+    ? `Showing live Firestore transactions for ${state.authUser.email || state.authUser.uid}.`
+    : state.firebaseConfigured
+      ? "Showing local/demo transactions until a Firebase user signs in."
+      : "Showing local demo transactions stored in localStorage.";
+  document.getElementById("dataSourceLabel").textContent = label;
+  document.getElementById("collectionsHint").textContent = state.usingFirestore && state.authUser
+    ? "Counts reflect the active Firestore-backed dataset."
+    : "Counts reflect the active local/demo dataset.";
+}
+
+function updateConnectionNotice(message, warning = false) {
+  const notice = document.getElementById("connectionNotice");
+  notice.textContent = message;
+  notice.classList.toggle("warning", warning);
+}
+
+function isEditor() {
+  return !state.firebaseConfigured || !state.firebaseAvailable || (state.authUser && state.role === "editor");
+}
+
+function updateAccessUi() {
+  const authStatus = document.getElementById("authStatus");
+  const currentUserDisplay = document.getElementById("currentUserDisplay");
+  const accessSummary = document.getElementById("accessSummary");
+  const signOutBtn = document.getElementById("signOutBtn");
+  const signInBtn = document.getElementById("signInBtn");
+  const signUpBtn = document.getElementById("signUpBtn");
+  const canEdit = isEditor();
+
+  authStatus.className = "status-pill";
+
+  if (!state.firebaseAvailable) {
+    authStatus.textContent = "Firebase SDK unavailable";
+    currentUserDisplay.value = "Not available in this browser/session";
+    accessSummary.value = "Firebase CDN scripts are unavailable, so the dashboard stays in local demo mode. Transaction editing remains enabled locally.";
+  } else if (!state.firebaseConfigured) {
+    authStatus.textContent = "Local demo mode";
+    authStatus.classList.add("editor");
+    currentUserDisplay.value = "Not signed in";
+    accessSummary.value = "Local demo mode is active. Editors can create transactions locally. Add Firebase config to use real authentication, Firestore sync, and user-based roles.";
+  } else if (!state.authUser) {
+    authStatus.textContent = "Firebase ready • Sign in required";
+    currentUserDisplay.value = "Not signed in";
+    accessSummary.value = "Firebase is configured. Sign in to read live Firestore transactions and load your viewer/editor role from users/{uid}.role or the fallback editor email list.";
+  } else {
+    authStatus.textContent = `${state.role === "editor" ? "Editor" : "Viewer"} • Firebase`;
+    authStatus.classList.add(state.role);
+    currentUserDisplay.value = `${state.authUser.email || state.authUser.uid}`;
+    accessSummary.value = state.role === "editor"
+      ? "You have editor access and can create transactions. Inter-entity transfers will save two linked Firestore records."
+      : "You have viewer access. Filtering, search, pagination, and exports are available, but transaction creation is disabled.";
+  }
+
+  signOutBtn.classList.toggle("hidden", !state.authUser);
+  signInBtn.disabled = !state.firebaseAvailable;
+  signUpBtn.disabled = !state.firebaseAvailable;
+  document.getElementById("openTransactionBtn").disabled = !canEdit;
+  document.getElementById("saveTransactionBtn").disabled = !canEdit;
+}
+
+function renderAll() {
+  populatePeriodOptions();
+  updatePeriodLabel();
+  updateKPIs();
+  renderCollectionsOverview();
+  renderTransactions();
+  renderChart();
+  updateDataSourceLabel();
+  updateAccessUi();
+}
+
+function setDefaultModalDate() {
+  const month = String(state.periodMonth).padStart(2, "0");
+  const day = "15";
+  document.getElementById("modalDate").value = `${state.periodYear}-${month}-${day}`;
 }
 
 function openModal() {
+  if (!isEditor()) {
+    alert("You have viewer access. Sign in as an editor to add transactions.");
+    return;
+  }
+
   document.getElementById("transactionModal").style.display = "flex";
+  if (state.selectedEntity !== "all") {
+    document.getElementById("modalEntity").value = state.selectedEntity;
+  }
+  setDefaultModalDate();
+  syncEntityDefaults();
   toggleTransferFields();
 }
 
@@ -747,9 +1497,18 @@ function closeModal() {
   document.getElementById("transactionModal").style.display = "none";
 }
 
+function syncEntityDefaults() {
+  const entityId = document.getElementById("modalEntity").value;
+  const defaultProgram = entityMap[entityId]?.settings?.defaultProgram || "";
+  if (defaultProgram && !document.getElementById("modalProgram").value) {
+    document.getElementById("modalProgram").value = defaultProgram;
+  }
+}
+
 function toggleTransferFields() {
   const type = document.getElementById("modalType").value;
-  document.getElementById("transferToRow").style.display = type === "transfer" ? "block" : "none";
+  const transferRow = document.getElementById("transferToRow");
+  transferRow.style.display = type === "transfer" ? "block" : "none";
 
   if (type === "expense") {
     document.getElementById("modalDebitAccount").value = "expense_food-nutrition";
@@ -763,7 +1522,27 @@ function toggleTransferFields() {
   }
 }
 
-function addTransaction() {
+async function persistTransactions(records) {
+  if (state.usingFirestore && state.firebaseDb && state.authUser) {
+    const batch = state.firebaseDb.batch();
+    records.forEach(record => {
+      batch.set(state.firebaseDb.collection("transactions").doc(record.id), clone(record));
+    });
+    await batch.commit();
+    return;
+  }
+
+  db.transactions = sortTransactions([...records, ...db.transactions]);
+  saveLocalTransactions();
+  renderAll();
+}
+
+async function addTransaction() {
+  if (!isEditor()) {
+    alert("You have viewer access. Sign in as an editor to create transactions.");
+    return;
+  }
+
   const entityId = document.getElementById("modalEntity").value;
   const type = document.getElementById("modalType").value;
   const date = document.getElementById("modalDate").value;
@@ -771,123 +1550,530 @@ function addTransaction() {
   const description = document.getElementById("modalDesc").value.trim();
   const reference = document.getElementById("modalReference").value.trim();
   const fundId = document.getElementById("modalFund").value || null;
+  const programId = document.getElementById("modalProgram").value || null;
   const debitAccount = document.getElementById("modalDebitAccount").value;
   const creditAccount = document.getElementById("modalCreditAccount").value;
   const transferTo = type === "transfer" ? document.getElementById("modalTransferTo").value : null;
+  const createdBy = state.authUser?.email || state.authUser?.uid || "demo-user";
 
-  if (!amount || !description || !debitAccount || !creditAccount) {
-    alert("Please fill amount, description, and account mapping");
+  if (!entityId || !date || !amount || !description || !debitAccount || !creditAccount) {
+    alert("Please complete entity, date, amount, description, and account mapping.");
     return;
   }
 
   if (type === "transfer" && !transferTo) {
-    alert("Please select a destination entity");
+    alert("Please select a destination entity.");
     return;
   }
 
   if (type === "transfer" && transferTo === entityId) {
-    alert("Source and destination entities must be different");
+    alert("Source and destination entities must be different.");
     return;
   }
 
-  let transactionId;
   try {
-    transactionId = createTransactionId(date);
+    const baseId = createTransactionId(date);
+    const auditTrail = [{ when: new Date().toISOString(), who: createdBy, action: "created" }];
+    const records = [];
+
+    if (type === "transfer") {
+      const outgoingId = `${baseId}_out`;
+      const incomingId = `${baseId}_in`;
+      records.push(
+        {
+          id: outgoingId,
+          entityId,
+          date,
+          type,
+          transferDirection: "out",
+          amount,
+          currency: "ZAR",
+          debitAccount,
+          creditAccount,
+          fundId,
+          programId,
+          description,
+          reference,
+          createdBy,
+          interEntity: { fromEntity: entityId, toEntity: transferTo, linkedTransactionId: incomingId },
+          auditTrail
+        },
+        {
+          id: incomingId,
+          entityId: transferTo,
+          date,
+          type,
+          transferDirection: "in",
+          amount,
+          currency: "ZAR",
+          debitAccount,
+          creditAccount,
+          fundId,
+          programId,
+          description: `Transfer received from ${entityMap[entityId]?.name || entityId}: ${description}`,
+          reference: reference ? `${reference}-R` : "",
+          createdBy,
+          interEntity: { fromEntity: entityId, toEntity: transferTo, linkedTransactionId: outgoingId },
+          auditTrail
+        }
+      );
+    } else {
+      records.push({
+        id: baseId,
+        entityId,
+        date,
+        type,
+        amount,
+        currency: "ZAR",
+        debitAccount,
+        creditAccount,
+        fundId,
+        programId,
+        description,
+        reference,
+        createdBy,
+        auditTrail
+      });
+    }
+
+    await persistTransactions(records);
+    closeModal();
+    document.getElementById("modalAmount").value = "";
+    document.getElementById("modalDesc").value = "";
+    document.getElementById("modalReference").value = "";
+    document.getElementById("modalTransferTo").value = "";
+    document.getElementById("modalFund").value = "fund_general";
+    document.getElementById("modalProgram").value = "";
+    document.getElementById("modalType").value = "income";
+    toggleTransferFields();
   } catch (error) {
-    alert(error.message);
+    console.error(error);
+    alert(error.message || "Unable to save transaction.");
+  }
+}
+
+function changePage(delta) {
+  const { totalPages } = getCurrentPageData();
+  state.page = Math.min(totalPages, Math.max(1, state.page + delta));
+  renderTransactions();
+}
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function exportCsv() {
+  const transactions = getFilteredTransactions();
+  const headers = ["Date", "Entity", "Type", "Fund", "Program", "Description", "Debit Account", "Credit Account", "Reference", "Amount", "Balance Impact"];
+  const rows = transactions.map(transaction => [
+    transaction.date,
+    entityMap[transaction.entityId]?.name || transaction.entityId,
+    transaction.type === "transfer" ? `transfer ${transaction.transferDirection || "out"}` : transaction.type,
+    fundMap[transaction.fundId]?.name || "Unrestricted",
+    programMap[transaction.programId]?.name || "General",
+    transaction.description,
+    accountMap[transaction.debitAccount]?.name || transaction.debitAccount,
+    accountMap[transaction.creditAccount]?.name || transaction.creditAccount,
+    transaction.reference || "",
+    Number(transaction.amount || 0).toFixed(2),
+    getBalanceImpact(transaction).label
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(row => row.map(value => `"${String(value).replace(/\r?\n/g, " ").replaceAll('"', '""')}"`).join(","))
+    .join("\n");
+
+  downloadBlob(`transactions-${state.periodYear}-${String(state.periodMonth).padStart(2, "0")}.csv`, csv, "text/csv;charset=utf-8");
+}
+
+function exportPdf() {
+  const transactions = getFilteredTransactions();
+  const summary = getPeriodSummary(state.periodMonth, state.periodYear);
+  const printWindow = window.open("", "_blank", "width=1100,height=900,noopener");
+  if (!printWindow) {
+    alert("Pop-up blocked. Please allow pop-ups for this dashboard in your browser settings to export PDF reports.");
     return;
   }
 
-  db.transactions.unshift({
-    id: transactionId,
-    entityId,
-    date,
-    type,
-    amount,
-    currency: "ZAR",
-    debitAccount,
-    creditAccount,
-    fundId,
-    description,
-    reference,
-    createdBy: "demo-user",
-    interEntity: transferTo ? { fromEntity: entityId, toEntity: transferTo } : null,
-    auditTrail: [{ when: new Date().toISOString(), who: "demo-user", action: "created" }]
+  const rows = transactions.map(transaction => `
+    <tr>
+      <td>${escapeHtml(transaction.date)}</td>
+      <td>${escapeHtml(entityMap[transaction.entityId]?.name || transaction.entityId)}</td>
+      <td>${escapeHtml(transaction.type === "transfer" ? `transfer ${transaction.transferDirection || "out"}` : transaction.type)}</td>
+      <td>${escapeHtml(fundMap[transaction.fundId]?.name || "Unrestricted")}<br><small>${escapeHtml(programMap[transaction.programId]?.name || "General")}</small></td>
+      <td>${escapeHtml(transaction.description)}</td>
+      <td>${escapeHtml(transaction.reference || "—")}</td>
+      <td style="text-align:right;">${escapeHtml(formatCurrency(transaction.amount))}</td>
+    </tr>
+  `).join("");
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Transactions Export</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #1e293b; }
+        h1 { margin-bottom: 8px; }
+        .summary { margin: 16px 0 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .summary div { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #e2e8f0; padding: 8px; vertical-align: top; }
+        th { background: #f8fafc; text-align: left; }
+        small { color: #64748b; }
+      </style>
+    </head>
+    <body>
+      <h1>Transactions Export</h1>
+      <div>${escapeHtml(formatMonthYear(state.periodMonth, state.periodYear))} • ${transactions.length} filtered record(s)</div>
+      <div class="summary">
+        <div><strong>Income</strong><br>${escapeHtml(formatCurrency(summary.income))}</div>
+        <div><strong>Expenses</strong><br>${escapeHtml(formatCurrency(summary.expense))}</div>
+        <div><strong>Net Surplus</strong><br>${escapeHtml(formatCurrency(summary.surplus))}</div>
+        <div><strong>Donations</strong><br>${escapeHtml(formatCurrency(summary.donations))}</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Entity</th>
+            <th>Type</th>
+            <th>Fund / Program</th>
+            <th>Description</th>
+            <th>Reference</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="7">No records</td></tr>'}</tbody>
+      </table>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function toggleConfigPanel() {
+  document.getElementById("configPanel").classList.toggle("open");
+}
+
+function fillConfigForm() {
+  const config = getStoredFirebaseConfig();
+  if (!config) return;
+  document.getElementById("cfgApiKey").value = config.apiKey || "";
+  document.getElementById("cfgAuthDomain").value = config.authDomain || "";
+  document.getElementById("cfgProjectId").value = config.projectId || "";
+  document.getElementById("cfgStorageBucket").value = config.storageBucket || "";
+  document.getElementById("cfgMessagingSenderId").value = config.messagingSenderId || "";
+  document.getElementById("cfgAppId").value = config.appId || "";
+  document.getElementById("cfgEditorEmails").value = config.editorEmails || "";
+}
+
+function saveFirebaseConfig() {
+  const config = {
+    apiKey: document.getElementById("cfgApiKey").value.trim(),
+    authDomain: document.getElementById("cfgAuthDomain").value.trim(),
+    projectId: document.getElementById("cfgProjectId").value.trim(),
+    storageBucket: document.getElementById("cfgStorageBucket").value.trim(),
+    messagingSenderId: document.getElementById("cfgMessagingSenderId").value.trim(),
+    appId: document.getElementById("cfgAppId").value.trim(),
+    editorEmails: document.getElementById("cfgEditorEmails").value.trim()
+  };
+
+  if (!config.apiKey || !config.authDomain || !config.projectId || !config.appId) {
+    alert("Please provide at least API key, auth domain, project ID, and app ID.");
+    return;
+  }
+
+  localStorage.setItem(LOCAL_KEYS.firebaseConfig, JSON.stringify(config));
+  alert("Firebase config saved. Reloading dashboard to initialize Firebase.");
+  window.location.reload();
+}
+
+function clearFirebaseConfig() {
+  localStorage.removeItem(LOCAL_KEYS.firebaseConfig);
+  alert("Firebase config cleared. Reloading dashboard in local demo mode.");
+  window.location.reload();
+}
+
+async function resolveUserRole(user) {
+  const fallbackEmails = String(getStoredFirebaseConfig()?.editorEmails || "")
+    .split(",")
+    .map(value => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (state.firebaseDb) {
+    try {
+      const snapshot = await state.firebaseDb.collection("users").doc(user.uid).get();
+      const role = snapshot.exists ? snapshot.data()?.role : null;
+      if (role === "editor" || role === "viewer") {
+        return role;
+      }
+    } catch (error) {
+      console.warn("Unable to fetch role document", error);
+    }
+  }
+
+  const email = String(user.email || "").toLowerCase();
+  if (user.emailVerified && fallbackEmails.includes(email)) {
+    return "editor";
+  }
+
+  return "viewer";
+}
+
+function subscribeToFirestoreTransactions() {
+  if (!state.firebaseDb || !state.authUser) return;
+  if (typeof state.firebaseUnsubscribe === "function") {
+    state.firebaseUnsubscribe();
+  }
+
+  state.firebaseUnsubscribe = state.firebaseDb.collection("transactions").onSnapshot(snapshot => {
+    const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    db.transactions = sortTransactions(records);
+    state.usingFirestore = true;
+    renderAll();
+    updateConnectionNotice(`Connected to Firebase Auth and Firestore. Loaded ${records.length} transaction record(s).`);
+  }, error => {
+    console.error(error);
+    state.usingFirestore = false;
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice(`Firestore sync failed (${error.message}). Falling back to local transactions.`, true);
+  });
+}
+
+async function handleAuthStateChanged(user) {
+  state.authUser = user;
+
+  if (!user) {
+    state.role = state.firebaseConfigured ? "viewer" : "editor";
+    state.usingFirestore = false;
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice(
+      state.firebaseConfigured
+        ? "Firebase is configured. Sign in to load live Firestore transactions; local/demo transactions remain visible while signed out."
+        : "Configure Firebase to enable live Auth and Firestore sync. Until then, demo data is stored in localStorage."
+    );
+    return;
+  }
+
+  state.role = await resolveUserRole(user);
+  subscribeToFirestoreTransactions();
+  renderAll();
+}
+
+function initializeFirebase() {
+  const config = getStoredFirebaseConfig();
+  state.firebaseConfigured = Boolean(config);
+
+  if (!state.firebaseAvailable) {
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice("Firebase SDK files could not be loaded in this environment. Running in local demo mode.", true);
+    return;
+  }
+
+  if (!config) {
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice("Configure Firebase to enable live Auth and Firestore sync. Until then, demo data is stored in localStorage.");
+    return;
+  }
+
+  try {
+    const app = window.firebase.apps.length ? window.firebase.app() : window.firebase.initializeApp({
+      apiKey: config.apiKey,
+      authDomain: config.authDomain,
+      projectId: config.projectId,
+      storageBucket: config.storageBucket,
+      messagingSenderId: config.messagingSenderId,
+      appId: config.appId
+    });
+    state.firebaseAuth = app.auth();
+    state.firebaseDb = app.firestore();
+    state.firebaseAuth.onAuthStateChanged(handleAuthStateChanged);
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice("Firebase initialized. Sign in to switch from local/demo data to the live Firestore transactions collection.");
+  } catch (error) {
+    console.error(error);
+    state.firebaseConfigured = false;
+    db.transactions = sortTransactions(loadLocalTransactions());
+    renderAll();
+    updateConnectionNotice(`Firebase initialization failed (${error.message}). Running in local demo mode.`, true);
+  }
+}
+
+async function signIn() {
+  if (!state.firebaseAuth) {
+    alert("Firebase Auth is not configured yet.");
+    return;
+  }
+
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) {
+    alert("Enter an email and password to sign in.");
+    return;
+  }
+
+  try {
+    await state.firebaseAuth.signInWithEmailAndPassword(email, password);
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "Unable to sign in.");
+  }
+}
+
+async function signUp() {
+  if (!state.firebaseAuth) {
+    alert("Firebase Auth is not configured yet.");
+    return;
+  }
+
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+  if (!email || !password) {
+    alert("Enter an email and password to create an account.");
+    return;
+  }
+
+  try {
+    const credentials = await state.firebaseAuth.createUserWithEmailAndPassword(email, password);
+    if (credentials.user && typeof credentials.user.sendEmailVerification === "function" && !credentials.user.emailVerified) {
+      await credentials.user.sendEmailVerification();
+    }
+    if (state.firebaseDb && credentials.user) {
+      await state.firebaseDb.collection("users").doc(credentials.user.uid).set({
+        email,
+        role: "viewer",
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+    alert("Account created. Check your email to verify the address before fallback editor access can apply.");
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "Unable to create an account.");
+  }
+}
+
+async function signOut() {
+  if (!state.firebaseAuth) return;
+  try {
+    await state.firebaseAuth.signOut();
+  } catch (error) {
+    console.error(error);
+    alert(error.message || "Unable to sign out.");
+  }
+}
+
+function wireEvents() {
+  document.getElementById("entityFilter").addEventListener("change", event => {
+    state.selectedEntity = event.target.value;
+    state.page = 1;
+    renderTransactions();
   });
 
-  renderTransactions(document.getElementById("entityFilter").value);
-  updateKPIs();
-  renderCollectionsOverview();
-  closeModal();
+  document.getElementById("typeFilter").addEventListener("change", event => {
+    state.selectedType = event.target.value;
+    state.page = 1;
+    renderTransactions();
+  });
 
-  // Reset form
-  document.getElementById("modalAmount").value = "";
-  document.getElementById("modalDesc").value = "";
-  document.getElementById("modalReference").value = "";
-  document.getElementById("modalTransferTo").value = "";
-  document.getElementById("modalFund").value = "fund_general";
-  document.getElementById("modalType").value = "income";
-  toggleTransferFields();
-}
+  document.getElementById("fundFilter").addEventListener("change", event => {
+    state.selectedFund = event.target.value;
+    state.page = 1;
+    renderTransactions();
+  });
 
-function updateKPIs() {
-  const income = db.transactions
-    .filter(transaction => ["income", "donation"].includes(transaction.type))
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  document.getElementById("programFilter").addEventListener("change", event => {
+    state.selectedProgram = event.target.value;
+    state.page = 1;
+    renderTransactions();
+  });
 
-  const expense = db.transactions
-    .filter(transaction => transaction.type === "expense")
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  document.getElementById("searchInput").addEventListener("input", event => {
+    state.search = event.target.value.trim().toLowerCase();
+    state.page = 1;
+    renderTransactions();
+  });
 
-  document.getElementById("totalIncome").textContent = formatCurrency(income);
-  document.getElementById("totalExpense").textContent = formatCurrency(expense);
-  document.getElementById("netSurplus").textContent = formatCurrency(income - expense);
-  document.getElementById("totalDonations").textContent = formatCurrency(
-    db.transactions
-      .filter(transaction => transaction.type === "donation")
-      .reduce((sum, transaction) => sum + transaction.amount, 0)
-  );
-}
+  document.getElementById("pageSizeFilter").addEventListener("change", event => {
+    state.pageSize = Number(event.target.value) || 10;
+    state.page = 1;
+    renderTransactions();
+  });
 
-function renderChart() {
-  if (!window.Chart) {
-    const chartContainer = document.getElementById("financeChart").parentElement;
-    const fallback = document.createElement("div");
-    fallback.className = "hint-text";
-    fallback.textContent = "Chart preview unavailable in this environment, but the collections-backed transaction data is loaded below.";
-    chartContainer.replaceChildren(fallback);
-    return;
-  }
+  document.getElementById("periodMonth").addEventListener("change", event => {
+    state.periodMonth = Number(event.target.value);
+    state.page = 1;
+    renderAll();
+  });
 
-  const ctx = document.getElementById("financeChart").getContext("2d");
-  new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: ["Jan", "Feb", "Mar"],
-      datasets: [
-        { label: "Income", data: [420000, 510000, 318670], backgroundColor: "rgba(52,199,89,0.65)" },
-        { label: "Expenses", data: [310000, 365000, 217410], backgroundColor: "rgba(255,59,48,0.55)" }
-      ]
-    },
-    options: {
-      responsive: true,
-      scales: { y: { beginAtZero: true } }
+  document.getElementById("periodYear").addEventListener("change", event => {
+    state.periodYear = Number(event.target.value);
+    state.page = 1;
+    renderAll();
+  });
+
+  document.getElementById("modalEntity").addEventListener("change", syncEntityDefaults);
+
+  document.getElementById("transactionModal").addEventListener("click", event => {
+    if (event.target.id === "transactionModal") {
+      closeModal();
     }
   });
 }
 
-// Event listeners
-document.getElementById("entityFilter").addEventListener("change", e => {
-  renderTransactions(e.target.value);
-});
+function bootstrapData() {
+  db.transactions = sortTransactions(loadLocalTransactions());
+  const latestTransaction = db.transactions[0];
+  if (latestTransaction?.date) {
+    const [year, month] = latestTransaction.date.split("-").map(Number);
+    if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
+      state.periodMonth = month;
+      state.periodYear = year;
+    }
+  }
+}
 
-populateEntityOptions();
-populateAccountOptions();
-populateFundOptions();
-renderCollectionsOverview();
-renderTransactions();
-updateKPIs();
-renderChart();
+function initApp() {
+  bootstrapData();
+  populateEntityOptions();
+  populateAccountOptions();
+  populateFundOptions();
+  populateProgramOptions();
+  populateTypeOptions();
+  populatePeriodOptions();
+  fillConfigForm();
+  setDefaultModalDate();
+  toggleTransferFields();
+  wireEvents();
+  renderAll();
+  initializeFirebase();
+}
+
+initApp();
 </script>
 </body>
 </html>
