@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Multi-Entity Finance Dashboard • 2026</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+    :root {
+      --primary: #5d5cff;
+      --primary-dark: #4a4acf;
+      --success: #34c759;
+      --danger: #ff3b30;
+      --warning: #ff9500;
+      --bg: #f5f7ff;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-light: #64748b;
+      --border: #e2e8f0;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      padding: 1.2rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 600; }
+
+    .entity-select {
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+
+    .entity-select option { color: #000; background: white; }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin: 1.5rem 0;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      border: 1px solid var(--border);
+      transition: transform 0.15s ease;
+    }
+
+    .stat-card:hover { transform: translateY(-4px); }
+
+    .stat-label {
+      color: var(--text-light);
+      font-size: 0.9rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+      font-size: 1.9rem;
+      font-weight: 700;
+      margin: 0.25rem 0;
+    }
+
+    .stat-trend {
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+
+    .positive { color: var(--success); }
+    .negative { color: var(--danger); }
+
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      border: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8fafc;
+    }
+
+    .card-title { font-size: 1.15rem; font-weight: 600; }
+
+    .btn {
+      padding: 0.6rem 1.2rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover { background: var(--primary-dark); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 1rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--text-light);
+      text-transform: uppercase;
+      font-size: 0.82rem;
+      letter-spacing: 0.5px;
+    }
+
+    tr:hover { background: #f8fafc; }
+
+    .type-badge {
+      padding: 0.35rem 0.8rem;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .badge-income  { background: #e6f4ea; color: #2e7d32; }
+    .badge-expense { background: #ffebee; color: #c62828; }
+    .badge-donation{ background: #e3f2fd; color: #1565c0; }
+    .badge-transfer{ background: #f3e5f5; color: #6a1b9a; }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 92vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title { font-size: 1.25rem; font-weight: 600; }
+
+    .modal-body { padding: 1.5rem; }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.45rem;
+      font-weight: 500;
+      color: #374151;
+    }
+
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.95rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 640px) {
+      .form-row { grid-template-columns: 1fr; }
+      .stats-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Multi-Entity Finance Dashboard</h1>
+    <p style="opacity:0.9; font-size:0.9rem;">Consolidated view • March 2026</p>
+  </div>
+  <select class="entity-select" id="entityFilter">
+    <option value="all">All Entities</option>
+    <option value="charity-faith">Charity & Faith Mission</option>
+    <option value="bop-children">Bophelong Children’s Home</option>
+    <option value="bop-oldage">Bophelong Old Age Home</option>
+    <option value="bop-admin">Bophelong Admin / Clinic</option>
+  </select>
+</header>
+
+<div class="container">
+
+  <!-- Quick Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Income (YTD)</div>
+      <div class="stat-value" id="totalIncome">R 1,248,670</div>
+      <div class="stat-trend positive"><i class="fas fa-arrow-up"></i> 18% vs last year</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Expenses (YTD)</div>
+      <div class="stat-value" id="totalExpense">R 892,410</div>
+      <div class="stat-trend negative"><i class="fas fa-arrow-down"></i> 4% better control</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Net Surplus</div>
+      <div class="stat-value" id="netSurplus" style="color:var(--success)">R 356,260</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Donations Received</div>
+      <div class="stat-value" id="totalDonations">R 487,920</div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div style="margin:1.5rem 0; text-align:right;">
+    <button class="btn btn-primary" onclick="openModal()">
+      <i class="fas fa-plus"></i> New Transaction
+    </button>
+  </div>
+
+  <!-- Transactions Table -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Recent Transactions</div>
+      <div>
+        <input type="text" placeholder="Search..." style="padding:0.6rem; border:1px solid #d1d5db; border-radius:6px; width:220px;">
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table id="transactionsTable">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Entity</th>
+            <th>Type</th>
+            <th>Description</th>
+            <th>Amount</th>
+            <th>Balance Impact</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Filled by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Simple Chart -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Monthly Income vs Expenses (2026)</div>
+    </div>
+    <div style="padding:1.5rem;">
+      <canvas id="financeChart" height="140"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="transactionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Financial Transaction</div>
+      <button style="background:none;border:none;font-size:1.4rem;cursor:pointer;" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-group">
+        <label>Entity</label>
+        <select id="modalEntity">
+          <option value="charity-faith">Charity & Faith Mission</option>
+          <option value="bop-children">Bophelong Children’s Home</option>
+          <option value="bop-oldage">Bophelong Old Age Home</option>
+          <option value="bop-admin">Bophelong Admin / Clinic</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Type</label>
+        <select id="modalType" onchange="toggleTransferFields()">
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+          <option value="donation">Donation Received</option>
+          <option value="transfer">Inter-Entity Transfer</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="modalDate" value="2026-03-15"/>
+        </div>
+        <div class="form-group">
+          <label>Amount (ZAR)</label>
+          <input type="number" id="modalAmount" step="0.01" min="0" placeholder="0.00"/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" id="modalDesc" placeholder="Sunday offering / Food purchase / etc."/>
+      </div>
+
+      <div class="form-group" id="transferToRow" style="display:none;">
+        <label>Transfer To</label>
+        <select id="modalTransferTo">
+          <option value="">— Select destination —</option>
+          <option value="charity-faith">Charity & Faith Mission</option>
+          <option value="bop-children">Bophelong Children’s Home</option>
+          <option value="bop-oldage">Bophelong Old Age Home</option>
+          <option value="bop-admin">Bophelong Admin / Clinic</option>
+        </select>
+      </div>
+
+      <div style="margin-top:1.5rem; text-align:right;">
+        <button class="btn" style="margin-right:0.75rem;" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="addTransaction()">Save Transaction</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// Dummy data (replace with real Firestore / API later)
+const entities = {
+  "charity-faith": "Charity & Faith Mission",
+  "bop-children":  "Bophelong Children’s Home",
+  "bop-oldage":    "Bophelong Old Age Home",
+  "bop-admin":     "Bophelong Admin / Clinic"
+};
+
+let transactions = [
+  { date:"2026-03-14", entity:"charity-faith", type:"income", desc:"Tithes & Offerings", amount:28450, impact:"+" },
+  { date:"2026-03-13", entity:"bop-children", type:"expense", desc:"Food & Nutrition", amount:18760, impact:"−" },
+  { date:"2026-03-12", entity:"bop-oldage", type:"donation", desc:"Corporate sponsor", amount:50000, impact:"+" },
+  { date:"2026-03-11", entity:"charity-faith", type:"transfer", desc:"Support children home", amount:25000, impact:"− → +" },
+  { date:"2026-03-10", entity:"bop-admin", type:"expense", desc:"Medical supplies", amount:12400, impact:"−" },
+];
+
+function renderTransactions(filter = "all") {
+  const tbody = document.querySelector("#transactionsTable tbody");
+  tbody.innerHTML = "";
+
+  const filtered = filter === "all" 
+    ? transactions 
+    : transactions.filter(t => t.entity === filter);
+
+  filtered.forEach(t => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${t.date}</td>
+      <td>${entities[t.entity]}</td>
+      <td><span class="type-badge badge-${t.type}">${t.type}</span></td>
+      <td>${t.desc}</td>
+      <td style="font-weight:600;">R ${t.amount.toLocaleString()}</td>
+      <td style="color:${t.impact.startsWith('+') || t.type==='donation' ? 'var(--success)' : 'var(--danger)'}">
+        ${t.impact}
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function openModal() {
+  document.getElementById("transactionModal").style.display = "flex";
+  toggleTransferFields();
+}
+
+function closeModal() {
+  document.getElementById("transactionModal").style.display = "none";
+}
+
+function toggleTransferFields() {
+  const type = document.getElementById("modalType").value;
+  document.getElementById("transferToRow").style.display = type === "transfer" ? "block" : "none";
+}
+
+function addTransaction() {
+  const entity   = document.getElementById("modalEntity").value;
+  const type     = document.getElementById("modalType").value;
+  const date     = document.getElementById("modalDate").value;
+  const amount   = Number(document.getElementById("modalAmount").value);
+  const desc     = document.getElementById("modalDesc").value;
+  const transferTo = type === "transfer" ? document.getElementById("modalTransferTo").value : null;
+
+  if (!amount || !desc) {
+    alert("Please fill amount and description");
+    return;
+  }
+
+  const impact = type === "expense" ? "−" : (type === "transfer" ? "− → +" : "+");
+
+  transactions.unshift({
+    date, entity, type, desc, amount, impact
+  });
+
+  renderTransactions(document.getElementById("entityFilter").value);
+  closeModal();
+
+  // Reset form
+  document.getElementById("modalAmount").value = "";
+  document.getElementById("modalDesc").value = "";
+  document.getElementById("modalTransferTo").value = "";
+}
+
+function updateKPIs() {
+  const income = transactions
+    .filter(t => ["income","donation"].includes(t.type))
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const expense = transactions
+    .filter(t => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  document.getElementById("totalIncome").textContent = `R ${income.toLocaleString()}`;
+  document.getElementById("totalExpense").textContent = `R ${expense.toLocaleString()}`;
+  document.getElementById("netSurplus").textContent = `R ${(income - expense).toLocaleString()}`;
+  document.getElementById("totalDonations").textContent = `R ${transactions.filter(t=>t.type==="donation").reduce((s,t)=>s+t.amount,0).toLocaleString()}`;
+}
+
+// Chart
+const ctx = document.getElementById('financeChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: ['Jan','Feb','Mar'],
+    datasets: [
+      { label: 'Income', data: [420000, 510000, 318670], backgroundColor: 'rgba(52,199,89,0.65)' },
+      { label: 'Expenses', data: [310000, 365000, 217410], backgroundColor: 'rgba(255,59,48,0.55)' }
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: { y: { beginAtZero: true } }
+  }
+});
+
+// Event listeners
+document.getElementById("entityFilter").addEventListener("change", e => {
+  renderTransactions(e.target.value);
+});
+
+renderTransactions();
+updateKPIs();
+</script>
+</body>
+</html>
